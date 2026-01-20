@@ -1,0 +1,1122 @@
+[
+  {
+    "ruleId": "",
+    "ruleTitle": "Fee Flow Controller Mechanics",
+    "type": "bad",
+    "code": "// WRONG: Fees are not claimed directly\nIEVault vault = IEVault(vaultAddress);\nvault.claimFees(); // This doesn't exist!",
+    "language": "solidity",
+    "description": "expecting direct fee claiming"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Fee Flow Controller Mechanics",
+    "type": "good",
+    "code": "import {IEVault} from \"evk/EVault/IEVault.sol\";\n\nIEVault vault = IEVault(vaultAddress);\n\n// Interest fees accumulate in the vault as shares\n// interestFee is the percentage of interest that goes to protocol\nuint16 interestFee = vault.interestFee(); // e.g., 0.1e4 = 10%\n\n// Accumulated fees are in vault shares\nuint256 accumulatedFees = vault.accumulatedFees();\n\n// The fee receiver is typically the FeeFlowController\naddress feeReceiver = vault.feeReceiver();\n\n// convertFees() converts accumulated shares to the fee receiver\n// Anyone can call this to trigger the conversion\nvault.convertFees();",
+    "language": "solidity",
+    "description": "understanding fee flow architecture"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Fee Flow Controller Mechanics",
+    "type": "good",
+    "code": "import {FeeFlowControllerEVK} from \"evk-periphery/FeeFlow/FeeFlowControllerEVK.sol\";\n\nFeeFlowControllerEVK feeFlow = FeeFlowControllerEVK(feeFlowAddress);\n\n// Get current auction state\nFeeFlowControllerEVK.Slot0 memory slot0 = feeFlow.getSlot0();\nuint256 currentPrice = feeFlow.getPrice();\n\n// Auction parameters (immutable)\nuint256 epochPeriod = feeFlow.epochPeriod();      // Auction duration\nuint256 priceMultiplier = feeFlow.priceMultiplier(); // Price scaling\nuint256 minInitPrice = feeFlow.minInitPrice();    // Minimum starting price\n\n// Payment token (what buyer pays)\naddress paymentToken = address(feeFlow.paymentToken());\n\n// Payment receiver (where payment goes)\naddress paymentReceiver = feeFlow.paymentReceiver();",
+    "language": "solidity",
+    "description": "interacting with FeeFlowController"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Fee Flow Controller Mechanics",
+    "type": "good",
+    "code": "import {IERC20} from \"openzeppelin-contracts/token/ERC20/IERC20.sol\";\n\n// Dutch auction: price starts high and decreases over epoch\n// Anyone can buy all accumulated assets at current price\n\n// Step 1: Check current price\nuint256 price = feeFlow.getPrice();\n\n// Step 2: Check available assets\naddress[] memory assets = new address[](2);\nassets[0] = vault1ShareToken;  // Vault 1 shares\nassets[1] = vault2ShareToken;  // Vault 2 shares\n\n// Step 3: Approve payment token\nIERC20(paymentToken).approve(address(feeFlow), price);\n\n// Step 4: Buy all assets\n// This converts fees, transfers payment, and sends assets to buyer\nfeeFlow.buy(\n    assets,           // Asset addresses to receive\n    msg.sender,       // Receiver of assets\n    slot0.epochId,    // Current epoch ID\n    block.timestamp + 1 hours, // Deadline\n    price * 101 / 100 // Max payment (with 1% slippage)\n);",
+    "language": "solidity",
+    "description": "buying from the auction"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Vault Hooks and Use Cases",
+    "type": "bad",
+    "code": "// WRONG: New vaults start with all operations disabled!\n// Hooks are enabled with hookTarget = address(0), which reverts\nIEVault vault = IEVault(newVaultAddress);\nvault.deposit(amount, receiver); // Reverts with E_OperationDisabled!",
+    "language": "solidity",
+    "description": "ignoring hook configuration on new vaults"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Vault Hooks and Use Cases",
+    "type": "good",
+    "code": "import {IEVault} from \"evk/EVault/IEVault.sol\";\n\nIEVault vault = IEVault(vaultAddress);\n\n// Get current hook configuration\n(address hookTarget, uint32 hookedOps) = vault.hookConfig();\n\n// hookedOps is a bitfield of operations that trigger the hook\n// If hookTarget == address(0) and operation is hooked, it reverts\n\n// Operation flags (from Constants.sol):\nuint32 OP_DEPOSIT            = 1 << 0;   // deposit\nuint32 OP_MINT               = 1 << 1;   // mint\nuint32 OP_WITHDRAW           = 1 << 2;   // withdraw\nuint32 OP_REDEEM             = 1 << 3;   // redeem\nuint32 OP_TRANSFER           = 1 << 4;   // transfer, transferFrom\nuint32 OP_SKIM               = 1 << 5;   // skim\nuint32 OP_BORROW             = 1 << 6;   // borrow\nuint32 OP_REPAY              = 1 << 7;   // repay\nuint32 OP_REPAY_WITH_SHARES  = 1 << 8;   // repayWithShares\nuint32 OP_PULL_DEBT          = 1 << 9;   // pullDebt\nuint32 OP_CONVERT_FEES       = 1 << 10;  // convertFees\nuint32 OP_LIQUIDATE          = 1 << 11;  // liquidate\nuint32 OP_FLASHLOAN          = 1 << 12;  // flashLoan\nuint32 OP_TOUCH              = 1 << 13;  // touch\nuint32 OP_VAULT_STATUS_CHECK = 1 << 14;  // checkVaultStatus\n\n// To enable all operations, disable all hooks:\nvault.setHookConfig(address(0), 0);",
+    "language": "solidity",
+    "description": "understanding hook architecture"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Vault Hooks and Use Cases",
+    "type": "good",
+    "code": "import {HookTargetGuardian} from \"evk-periphery/HookTarget/HookTargetGuardian.sol\";\n\n// Deploy pause guardian\nHookTargetGuardian guardian = new HookTargetGuardian(\n    admin,           // DEFAULT_ADMIN_ROLE holder\n    1 hours,         // PAUSE_DURATION: how long pause lasts\n    24 hours         // PAUSE_COOLDOWN: time before can pause again\n);\n\n// Grant guardian role to trusted address\nguardian.grantRole(guardian.GUARDIAN_ROLE(), guardianAddress);\n\n// Configure vault to use guardian for specific operations\nuint32 pausableOps = OP_DEPOSIT | OP_BORROW | OP_LIQUIDATE;\nvault.setHookConfig(address(guardian), pausableOps);\n\n// Guardian can now pause/unpause\nguardian.pause();    // All hooked operations will revert\nguardian.unpause();  // Operations resume\n\n// Check pause status\nbool isPaused = guardian.isPaused();\nuint256 remaining = guardian.remainingPauseDuration();\nbool canPause = guardian.canBePaused();",
+    "language": "solidity",
+    "description": "implementing Pause Guardian"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Vault Hooks and Use Cases",
+    "type": "good",
+    "code": "import {HookTargetAccessControl} from \"evk-periphery/HookTarget/HookTargetAccessControl.sol\";\n\n// Access control hook for permissioned vaults\nHookTargetAccessControl accessControl = new HookTargetAccessControl(\n    eVaultFactory,\n    admin\n);\n\n// Grant roles to addresses\naccessControl.grantRole(accessControl.WILD_CARD(), allowedAddress);\n\n// Configure vault\nvault.setHookConfig(address(accessControl), OP_DEPOSIT | OP_BORROW);\n\n// Now only addresses with WILD_CARD role can deposit/borrow",
+    "language": "solidity",
+    "description": "implementing Access Control"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Vault Hooks and Use Cases",
+    "type": "good",
+    "code": "import {BaseHookTarget} from \"evk-periphery/HookTarget/BaseHookTarget.sol\";\n\ncontract CustomHook is BaseHookTarget {\n    mapping(address => bool) public allowed;\n    \n    constructor(address factory) BaseHookTarget(factory) {}\n    \n    // Hook receives same calldata as vault function\n    // with the authenticated caller appended\n    function deposit(uint256 assets, address receiver) external view {\n        address caller = _msgSender();\n        require(allowed[caller], \"Not allowed\");\n        // If this doesn't revert, the deposit proceeds\n    }\n    \n    function borrow(uint256 assets, address receiver) external view {\n        address caller = _msgSender();\n        require(allowed[caller], \"Not allowed\");\n    }\n    \n    // Fallback for other operations - allow them\n    fallback() external {}\n}",
+    "language": "solidity",
+    "description": "custom hook implementation"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Vault Hooks and Use Cases",
+    "type": "good",
+    "code": "import { getContract } from 'viem';\n\nconst vault = getContract({\n  address: vaultAddress,\n  abi: evaultABI,\n  client: publicClient,\n});\n\nconst [hookTarget, hookedOps] = await vault.read.hookConfig();\n\n// Decode hooked operations (correct bit positions)\nconst operations = {\n  DEPOSIT: (hookedOps & (1 << 0)) !== 0,\n  MINT: (hookedOps & (1 << 1)) !== 0,\n  WITHDRAW: (hookedOps & (1 << 2)) !== 0,\n  REDEEM: (hookedOps & (1 << 3)) !== 0,\n  TRANSFER: (hookedOps & (1 << 4)) !== 0,\n  SKIM: (hookedOps & (1 << 5)) !== 0,\n  BORROW: (hookedOps & (1 << 6)) !== 0,\n  REPAY: (hookedOps & (1 << 7)) !== 0,\n  REPAY_WITH_SHARES: (hookedOps & (1 << 8)) !== 0,\n  PULL_DEBT: (hookedOps & (1 << 9)) !== 0,\n  CONVERT_FEES: (hookedOps & (1 << 10)) !== 0,\n  LIQUIDATE: (hookedOps & (1 << 11)) !== 0,\n  FLASHLOAN: (hookedOps & (1 << 12)) !== 0,\n  TOUCH: (hookedOps & (1 << 13)) !== 0,\n  VAULT_STATUS_CHECK: (hookedOps & (1 << 14)) !== 0,\n};\n\nconsole.log(`Hook Target: ${hookTarget}`);\nconsole.log('Hooked Operations:', operations);\n\n// If hookTarget is zero and operation is hooked, it's DISABLED\nconst isDepositDisabled = operations.DEPOSIT && hookTarget === '0x0000000000000000000000000000000000000000';",
+    "language": "typescript",
+    "description": "checking vault status with hooks"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "EUL Reward Token Distribution",
+    "type": "bad",
+    "code": "// WRONG: Reward tokens are locked and vest over time\nIERC20(rewardToken).transfer(recipient, amount); // May revert or lose tokens!",
+    "language": "solidity",
+    "description": "expecting immediate full access to rewards"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "EUL Reward Token Distribution",
+    "type": "good",
+    "code": "import {RewardToken} from \"evk-periphery/ERC20/deployed/RewardToken.sol\";\n\nRewardToken reward = RewardToken(rewardTokenAddress);\n\n// RewardToken wraps EUL with locking schedule\naddress underlying = address(reward.underlying()); // EUL token\n\n// Unlock schedule (per the contract):\n// - 20% unlocked immediately\n// - Remaining 80% unlocks linearly over 180 days\n// - Full unlock at 180 days from lock timestamp\n\n// Check whitelist status\n// WHITELIST_STATUS_NONE = 0: subject to lock schedule\n// WHITELIST_STATUS_ADMIN = 1: can deposit/withdraw freely\n// WHITELIST_STATUS_DISTRIBUTOR = 2: can transfer but not withdraw\nuint256 status = reward.whitelistStatus(account);",
+    "language": "solidity",
+    "description": "understanding locked reward mechanics"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "EUL Reward Token Distribution",
+    "type": "good",
+    "code": "// Get all lock entries for an account\n(uint256[] memory lockTimestamps, uint256[] memory amounts) = \n    reward.getLockedAmounts(account);\n\n// For each lock, check withdrawable amounts\nfor (uint i = 0; i < lockTimestamps.length; i++) {\n    (uint256 accountAmount, uint256 remainderAmount) = \n        reward.getWithdrawAmountsByLockTimestamp(account, lockTimestamps[i]);\n    \n    // accountAmount: what account can withdraw now\n    // remainderAmount: what goes to remainder receiver (DAO)\n}",
+    "language": "solidity",
+    "description": "checking unlock amounts"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "EUL Reward Token Distribution",
+    "type": "good",
+    "code": "// Withdraw by specific lock timestamp\nbool allowRemainderLoss = true; // Accept that unvested portion goes to DAO\n\nreward.withdrawToByLockTimestamp(\n    recipient,           // Where to send unlocked tokens\n    lockTimestamp,       // Which lock to withdraw from\n    allowRemainderLoss   // Must be true if any unvested\n);\n\n// Or withdraw from multiple locks at once\nuint256[] memory timestamps = reward.getLockedAmountsLockTimestamps(account);\nreward.withdrawToByLockTimestamps(\n    recipient,\n    timestamps,\n    allowRemainderLoss\n);",
+    "language": "solidity",
+    "description": "withdrawing vested tokens"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Euler Market Design",
+    "type": "bad",
+    "code": "// WRONG: There's no single \"Euler pool\" to interact with\n// Each asset has its own vault(s) with independent configuration\naddress eulerPool = 0x...;\nIPool(eulerPool).deposit(USDC, amount); // This doesn't exist!",
+    "language": "solidity",
+    "description": "assuming monolithic pool like Compound/Aave"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Euler Market Design",
+    "type": "good",
+    "code": "import {IEVault} from \"evk/EVault/IEVault.sol\";\nimport {IEVC} from \"ethereum-vault-connector/interfaces/IEVC.sol\";\n\n// Each vault is independent - there can be multiple USDC vaults\n// with different configurations (oracle, IRM, collaterals)\naddress usdcVault = 0x...; // A specific USDC vault\n\n// Vaults are standard ERC-4626 with extensions\nIEVault vault = IEVault(usdcVault);\n\n// Key vault properties\naddress asset = vault.asset();           // Underlying token\naddress oracle = vault.oracle();         // Price oracle (EulerRouter)\naddress irm = vault.interestRateModel(); // Interest rate model\naddress unitOfAccount = vault.unitOfAccount(); // Price denomination\n\n// Collateral relationships are vault-to-vault\n// This vault accepts another vault's shares as collateral\naddress[] memory collaterals = vault.LTVList();\n(uint16 borrowLTV, uint16 liquidationLTV, , ) = vault.LTVFull(collateralVault);",
+    "language": "solidity",
+    "description": "understanding independent vault architecture"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Euler Market Design",
+    "type": "good",
+    "code": "// The EVC (Ethereum Vault Connector) orchestrates cross-vault operations\nIEVC evc = IEVC(0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383);\n\n// Accounts enable a vault as collateral for their positions\nevc.enableCollateral(account, collateralVault);\n\n// Accounts enable a vault as controller (to borrow from)\nevc.enableController(account, borrowVault);\n\n// The controller vault checks all collateral vaults to ensure solvency\n// This happens automatically during deferred checks",
+    "language": "solidity",
+    "description": "understanding the EVC layer"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Vault Types (Core, Edge, Escrow)",
+    "type": "bad",
+    "code": "// WRONG: Not all vaults support borrowing or have the same features\nIEVault vault = IEVault(anyVault);\nvault.borrow(amount, receiver); // May revert for escrow vaults!\nvault.setInterestRateModel(irm); // May not be configurable!",
+    "language": "solidity",
+    "description": "treating all vaults the same"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Vault Types (Core, Edge, Escrow)",
+    "type": "good",
+    "code": "import {EscrowedCollateralPerspective} from \"evk-periphery/Perspectives/deployed/EscrowedCollateralPerspective.sol\";\n\n// Escrow vaults are singletons per asset - only one per token\nEscrowedCollateralPerspective perspective = EscrowedCollateralPerspective(perspectiveAddress);\naddress escrowVault = perspective.singletonLookup(assetAddress);\n\n// If not deployed, deploy new escrow vault\nif (escrowVault == address(0)) {\n    bytes memory trailingData = abi.encodePacked(asset, address(0), address(0));\n    escrowVault = GenericFactory(factory).createProxy(address(0), true, trailingData);\n    \n    // Escrow vaults have minimal config\n    IEVault(escrowVault).setHookConfig(address(0), 0);\n    IEVault(escrowVault).setGovernorAdmin(address(0));\n    \n    // Verify in perspective\n    perspective.perspectiveVerify(escrowVault, true);\n}\n\n// Escrow vault properties:\n// - No oracle (address(0))\n// - No unit of account (address(0))\n// - No IRM (address(0))\n// - No caps\n// - No hooks\n// - No LTV list (cannot be borrowed against directly)",
+    "language": "solidity",
+    "description": "understanding vault types"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Vault Types (Core, Edge, Escrow)",
+    "type": "good",
+    "code": "import { getContract } from 'viem';\n\n// Perspectives verify vault properties\nconst governedPerspective = getContract({\n  address: governedPerspectiveAddress,\n  abi: perspectiveABI,\n  client: publicClient,\n});\n\nconst escrowPerspective = getContract({\n  address: escrowPerspectiveAddress,\n  abi: perspectiveABI,\n  client: publicClient,\n});\n\n// Check if vault is in a perspective\nconst isGoverned = await governedPerspective.read.isVerified([vaultAddress]);\nconst isEscrow = await escrowPerspective.read.isVerified([vaultAddress]);\n\n// Perspectives provide trust guarantees\n// - GovernedPerspective: vetted by Euler governance\n// - EscrowedCollateralPerspective: verified collateral-only vault\n// - EVKFactoryPerspective: deployed by official factory\n// - EdgeFactoryPerspective: deployed by Edge factory",
+    "language": "typescript",
+    "description": "using Perspectives to verify vault type"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Create an EulerEarn Vault",
+    "type": "bad",
+    "code": "// Don't deploy EulerEarn directly - use factory\nEulerEarn vault = new EulerEarn();\n// Missing proper initialization, not tracked by factory",
+    "language": "solidity",
+    "description": "deploying without proper initialization"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Create an EulerEarn Vault",
+    "type": "good",
+    "code": "import {EulerEarnFactory} from \"euler-earn/EulerEarnFactory.sol\";\nimport {IEulerEarn} from \"euler-earn/interfaces/IEulerEarn.sol\";\n\n// Deploy EulerEarn vault via factory\n// Parameters: initialOwner, initialTimelock, asset, name, symbol, salt\naddress earnVault = EulerEarnFactory(factory).createEulerEarn(\n    initialOwner,       // Address that becomes vault owner\n    0,                  // Initial timelock (can be 0)\n    asset,              // Underlying asset (e.g., USDC)\n    name,               // Vault name (e.g., \"Euler USDC Earn\")\n    symbol,             // Vault symbol (e.g., \"eUSDC\")\n    bytes32(0)          // Salt for CREATE2 (0 for default)\n);\n\nIEulerEarn earn = IEulerEarn(earnVault);",
+    "language": "solidity",
+    "description": "deploy via EulerEarnFactory"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Create an EulerEarn Vault",
+    "type": "good",
+    "code": "// Set fee (max 50%)\nearn.setFeeRecipient(treasuryAddress);\nearn.setFee(0.1e18); // 10% of yield (setFee, not setPerformanceFee)\n\n// Set timelock for governance actions (two-step process)\n// Initial timelock can be 0, but subsequent changes are timelocked\n// Step 1: Submit new timelock value\nearn.submitTimelock(24 hours);\n// Step 2: After current timelock elapses, accept the new value\nearn.acceptTimelock();\n\n// Set guardian for emergency actions (also two-step if timelock > 0)\nearn.submitGuardian(guardianAddress);\n\n// Set curator for strategy management\nearn.setCurator(curatorAddress);\n\n// Add allocators who can rebalance\nearn.setIsAllocator(allocatorAddress, true);",
+    "language": "solidity",
+    "description": "configure vault after deployment"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Create an EulerEarn Vault",
+    "type": "good",
+    "code": "// Strategy vaults must be ERC-4626 compliant\n// EVK vaults are preferred due to built-in protections\n\n// Submit cap for a strategy (timelocked if timelock > 0)\n// Note: submitCap takes IERC4626, not address\nearn.submitCap(\n    IERC4626(strategyVault),  // IERC4626 strategy vault\n    100_000e6                  // Supply cap (e.g., 100k USDC)\n);\n\n// After timelock, accept the cap\nearn.acceptCap(IERC4626(strategyVault));\n\n// Add strategy to supply queue (order matters)\n// Note: setSupplyQueue takes IERC4626[] not address[]\nIERC4626[] memory newSupplyQueue = new IERC4626[](2);\nnewSupplyQueue[0] = IERC4626(strategyVault1);  // First priority\nnewSupplyQueue[1] = IERC4626(strategyVault2);  // Second priority\nearn.setSupplyQueue(newSupplyQueue);\n\n// Withdraw queue contains all strategies with allocation\n// Updated automatically, but can be reordered",
+    "language": "solidity",
+    "description": "add strategy vaults"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Create an EulerEarn Vault",
+    "type": "good",
+    "code": "import { encodeFunctionData } from 'viem';\n\n// Deploy earn vault via factory\nconst earnVaultAddress = await eulerEarnFactory.write.createEulerEarn([\n  ownerAddress,          // initialOwner\n  0n,                    // initialTimelock\n  usdcAddress,           // asset\n  'Euler USDC Earn',     // name\n  'eUSDC',               // symbol\n  '0x0000000000000000000000000000000000000000000000000000000000000000', // salt\n]);\n\n// Configure in batch\nconst setupCalls = [\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'setFeeRecipient',\n    args: [treasuryAddress],\n  }),\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'setFee',\n    args: [0.1e18], // 10%\n  }),\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'setCurator',\n    args: [curatorAddress],\n  }),\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'setGuardian',\n    args: [guardianAddress],\n  }),\n];\n\n// Execute setup\nfor (const call of setupCalls) {\n  await ownerWallet.sendTransaction({\n    to: earnVaultAddress,\n    data: call,\n  });\n}",
+    "language": "typescript",
+    "description": "TypeScript vault creation"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Manage EulerEarn Strategies",
+    "type": "bad",
+    "code": "// This may fail if strategy doesn't have enough liquidity\nearn.reallocate(\n    [strategyA, strategyB],\n    [type(uint256).max, 0]  // Withdraw all from A\n);\n// Error: strategy may have utilization, funds locked",
+    "language": "solidity",
+    "description": "reallocating without checking liquidity"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Manage EulerEarn Strategies",
+    "type": "good",
+    "code": "// Check available liquidity in each strategy\nfunction getStrategyLiquidity(address strategy) \n    public view returns (uint256) \n{\n    // For EVK vaults, check cash available\n    try IEVault(strategy).cash() returns (uint256 cash) {\n        return cash;\n    } catch {\n        // For generic ERC-4626, estimate via maxWithdraw\n        return IERC4626(strategy).maxWithdraw(address(earn));\n    }\n}\n\n// Reallocate respecting liquidity\nuint256 availableLiquidity = getStrategyLiquidity(fromStrategy);\nuint256 toWithdraw = min(desiredAmount, availableLiquidity);\n\n// reallocate takes MarketAllocation[] struct array\n// struct MarketAllocation { IERC4626 id; uint256 assets; }\n// \n// CRITICAL: The assets field specifies the TARGET allocation, not the delta!\n// - assets = 0: Withdraw everything from this strategy\n// - assets = N: Leave exactly N assets in this strategy  \n// - assets = type(uint256).max: Deposit all available cash into this strategy\n//\n// Order matters: withdrawals should come before deposits\n\nMarketAllocation[] memory allocations = new MarketAllocation[](2);\nallocations[0] = MarketAllocation({\n    id: IERC4626(fromStrategy),\n    assets: 0  // Target: leave 0 assets (withdraws everything)\n});\nallocations[1] = MarketAllocation({\n    id: IERC4626(toStrategy),\n    assets: type(uint256).max  // Target: deposit all available cash\n});\n\nearn.reallocate(allocations);",
+    "language": "solidity",
+    "description": "check liquidity before reallocating"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Manage EulerEarn Strategies",
+    "type": "good",
+    "code": "// Supply queue determines deposit order\n// First strategy gets filled first, then second, etc.\n\n// Current queue: [vaultA, vaultB, vaultC]\n// Want to prioritize vaultB for higher yield\n\nconst newSupplyQueue = [vaultB, vaultA, vaultC];\n\nawait earn.write.setSupplyQueue([newSupplyQueue]);\n\n// Now deposits flow: vaultB (until cap) -> vaultA -> vaultC",
+    "language": "typescript",
+    "description": "updating supply queue priority"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Manage EulerEarn Strategies",
+    "type": "good",
+    "code": "// Withdraw queue determines withdrawal order\n// Put most liquid strategies first for user experience\n\n// Get current allocations\nuint256[] memory allocations = new uint256[](strategies.length);\nfor (uint256 i = 0; i < strategies.length; i++) {\n    allocations[i] = IERC4626(strategies[i]).balanceOf(address(earn));\n}\n\n// updateWithdrawQueue takes uint256[] indexes, NOT addresses\n// The indexes represent the new order of the current withdraw queue\n// Example: To swap positions 0 and 1 in a 3-element queue: [1, 0, 2]\nuint256[] memory newOrder = sortByLiquidityIndexes(strategies);\nearn.updateWithdrawQueue(newOrder);",
+    "language": "solidity",
+    "description": "updating withdraw queue for liquidity"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Manage EulerEarn Strategies",
+    "type": "good",
+    "code": "// To reduce exposure to a strategy:\n\n// Step 1: Reduce cap (instant for curator/owner)\nearn.submitCap(riskyStrategy, newLowerCap);\n// No timelock for cap reduction!\n\n// Step 2: If over cap, reallocate excess\nuint256 currentAllocation = earn.expectedSupplyAssets(IERC4626(riskyStrategy));\nif (currentAllocation > newLowerCap) {\n    // reallocate takes MarketAllocation[] struct array\n    // Set target allocation for risky strategy to the new cap\n    MarketAllocation[] memory allocations = new MarketAllocation[](2);\n    allocations[0] = MarketAllocation({\n        id: IERC4626(riskyStrategy),\n        assets: newLowerCap  // Target: reduce to new cap\n    });\n    allocations[1] = MarketAllocation({\n        id: IERC4626(safeStrategy),\n        assets: type(uint256).max  // Target: deposit all freed assets\n    });\n    \n    earn.reallocate(allocations);\n}",
+    "language": "solidity",
+    "description": "reducing strategy cap safely"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Manage EulerEarn Strategies",
+    "type": "good",
+    "code": "// If a strategy is reverting/compromised:\n\n// Step 1: Set cap to 0\nearn.submitCap(brokenStrategy, 0);\n\n// Step 2: Submit forced removal (starts timelock)\n// Note: Takes IERC4626, not address\nearn.submitMarketRemoval(IERC4626(brokenStrategy));\n\n// Step 3: Wait for timelock\n\n// Step 4: After timelock, update withdraw queue with new indexes\n// updateWithdrawQueue takes uint256[] indexes to reorder/remove\n// To remove an entry, omit its index from the array\n// WARNING: Funds in removed strategy are considered lost!\nuint256[] memory newIndexes = getQueueWithoutBrokenStrategy();\nearn.updateWithdrawQueue(newIndexes);",
+    "language": "solidity",
+    "description": "emergency strategy removal"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Manage EulerEarn Strategies",
+    "type": "good",
+    "code": "interface StrategyMetrics {\n  address: Address;\n  allocation: bigint;\n  apy: number;\n  utilization: number;\n  liquidity: bigint;\n}\n\nasync function getStrategyMetrics(\n  earn: Address,\n  strategy: Address\n): Promise<StrategyMetrics> {\n  const allocation = await IERC4626(strategy).balanceOf(earn);\n  const vaultInfo = await vaultLens.getVaultInfoDynamic(strategy);\n  \n  return {\n    address: strategy,\n    allocation,\n    apy: vaultInfo.irmInfo.interestRateInfo[0].supplyAPY / 1e25,\n    utilization: vaultInfo.totalBorrowed / vaultInfo.totalAssets,\n    liquidity: vaultInfo.totalCash,\n  };\n}\n\nasync function optimizeAllocation(earn: Address) {\n  const strategies = await earn.withdrawQueue();\n  const metrics = await Promise.all(\n    strategies.map(s => getStrategyMetrics(earn, s))\n  );\n  \n  // Sort by APY descending\n  const byApy = [...metrics].sort((a, b) => b.apy - a.apy);\n  \n  // Reallocate to higher-yield strategies (respecting caps and liquidity)\n  for (const highYield of byApy.slice(0, 3)) {\n    const cap = await earn.caps(highYield.address);\n    const headroom = cap - highYield.allocation;\n    \n    if (headroom > MIN_REALLOCATION) {\n      // Find lower-yield strategy to pull from\n      const lowYield = byApy[byApy.length - 1];\n      const moveAmount = min(headroom, lowYield.liquidity);\n      \n      if (moveAmount > MIN_REALLOCATION) {\n        // Reallocate: reduce low yield, increase high yield\n        const allocations = [\n          { id: lowYield.address, assets: lowYield.allocation - moveAmount },\n          { id: highYield.address, assets: type(uint256).max },\n        ];\n        await earn.write.reallocate([allocations]);\n      }\n    }\n  }\n}",
+    "language": "typescript",
+    "description": "monitoring and rebalancing"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Batch Multiple Operations Atomically",
+    "type": "bad",
+    "code": "// Multiple transactions = higher gas, not atomic, potential for partial failure\nIEVC(evc).enableCollateral(account, collateralVault);  // Tx 1\nIEVault(collateralVault).deposit(amount, account);      // Tx 2\nIEVC(evc).enableController(account, borrowVault);       // Tx 3\nIEVault(borrowVault).borrow(borrowAmount, account);     // Tx 4\n// If Tx 4 fails, Tx 1-3 already executed!",
+    "language": "solidity",
+    "description": "separate transactions for each operation"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Batch Multiple Operations Atomically",
+    "type": "good",
+    "code": "IEVC.BatchItem[] memory items = new IEVC.BatchItem[](4);\n\n// Item 1: Enable collateral\n// NOTE: When target is EVC itself, onBehalfOfAccount MUST be address(0)\nitems[0] = IEVC.BatchItem({\n    onBehalfOfAccount: address(0),\n    targetContract: address(evc),\n    value: 0,\n    data: abi.encodeCall(IEVC.enableCollateral, (account, collateralVault))\n});\n\n// Item 2: Deposit collateral (vault call - use account)\nitems[1] = IEVC.BatchItem({\n    onBehalfOfAccount: account,\n    targetContract: collateralVault,\n    value: 0,\n    data: abi.encodeCall(IEVault.deposit, (amount, account))\n});\n\n// Item 3: Enable controller (EVC call - use address(0))\nitems[2] = IEVC.BatchItem({\n    onBehalfOfAccount: address(0),\n    targetContract: address(evc),\n    value: 0,\n    data: abi.encodeCall(IEVC.enableController, (account, borrowVault))\n});\n\n// Item 4: Borrow (vault call - use account)\nitems[3] = IEVC.BatchItem({\n    onBehalfOfAccount: account,\n    targetContract: borrowVault,\n    value: 0,\n    data: abi.encodeCall(IEVault.borrow, (borrowAmount, account))\n});\n\n// Execute all atomically - liquidity check deferred to end\nIEVC(evc).batch(items);",
+    "language": "solidity",
+    "description": "batch all operations atomically"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Batch Multiple Operations Atomically",
+    "type": "good",
+    "code": "import { encodeFunctionData } from 'viem';\n\nconst batchItems = [\n  // EVC calls: onBehalfOfAccount must be address(0)\n  {\n    onBehalfOfAccount: '0x0000000000000000000000000000000000000000',\n    targetContract: evcAddress,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: evcABI,\n      functionName: 'enableCollateral',\n      args: [account, collateralVault],\n    }),\n  },\n  // Vault calls: use the actual account\n  {\n    onBehalfOfAccount: account,\n    targetContract: collateralVault,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: eVaultABI,\n      functionName: 'deposit',\n      args: [depositAmount, account],\n    }),\n  },\n  // ... more items\n];\n\nconst tx = await evc.write.batch([batchItems]);",
+    "language": "typescript",
+    "description": "TypeScript with viem"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Batch Multiple Operations Atomically",
+    "type": "good",
+    "code": "// Deferred checks allow temporarily invalid states!\n// Borrow first, deposit collateral second - works in batch\nIEVC.BatchItem[] memory items = new IEVC.BatchItem[](4);\n\nitems[0] = IEVC.BatchItem({\n    onBehalfOfAccount: address(0),  // EVC call - must be address(0)\n    targetContract: address(evc),\n    value: 0,\n    data: abi.encodeCall(IEVC.enableController, (account, borrowVault))\n});\n\nitems[1] = IEVC.BatchItem({\n    onBehalfOfAccount: account,\n    targetContract: borrowVault,\n    value: 0,\n    data: abi.encodeCall(IEVault.borrow, (borrowAmount, account))\n});\n\n// Use borrowed funds to get collateral (e.g., swap)\nitems[2] = IEVC.BatchItem({\n    onBehalfOfAccount: account,\n    targetContract: swapRouter,\n    value: 0,\n    data: abi.encodeCall(ISwapRouter.swap, (/* params */))\n});\n\n// Deposit collateral - now account is healthy\nitems[3] = IEVC.BatchItem({\n    onBehalfOfAccount: account,\n    targetContract: collateralVault,\n    value: 0,\n    data: abi.encodeCall(IEVault.deposit, (collateralAmount, account))\n});\n\n// Liquidity check happens AFTER all operations\nIEVC(evc).batch(items);",
+    "language": "solidity",
+    "description": "flash loan style - borrow before collateral"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Enable Vault as Collateral",
+    "type": "bad",
+    "code": "// Deposit into vault\nIEVault(collateralVault).deposit(amount, account);\n\n// Try to borrow - fails because collateral not recognized\nIEVC(evc).enableController(account, borrowVault);\nIEVault(borrowVault).borrow(borrowAmount, account);\n// Error: E_AccountLiquidity - no recognized collateral",
+    "language": "solidity",
+    "description": "borrowing without enabling collateral"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Enable Vault as Collateral",
+    "type": "good",
+    "code": "// Step 1: Deposit into the collateral vault\nIERC20(asset).approve(collateralVault, amount);\nIEVault(collateralVault).deposit(amount, account);\n\n// Step 2: Enable this vault as collateral for your account\n// This adds the vault to your account's collateral set\nIEVC(evc).enableCollateral(account, collateralVault);\n\n// Step 3: Now you can borrow against this collateral\nIEVC(evc).enableController(account, borrowVault);\nIEVault(borrowVault).borrow(borrowAmount, account);",
+    "language": "solidity",
+    "description": "enable collateral before borrowing"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Enable Vault as Collateral",
+    "type": "good",
+    "code": "IEVC.BatchItem[] memory items = new IEVC.BatchItem[](3);\n\n// Enable WETH vault as collateral\n// NOTE: When target is EVC itself, onBehalfOfAccount MUST be address(0)\nitems[0] = IEVC.BatchItem({\n    onBehalfOfAccount: address(0),\n    targetContract: address(evc),\n    value: 0,\n    data: abi.encodeCall(IEVC.enableCollateral, (account, wethVault))\n});\n\n// Enable WBTC vault as collateral\nitems[1] = IEVC.BatchItem({\n    onBehalfOfAccount: address(0),\n    targetContract: address(evc),\n    value: 0,\n    data: abi.encodeCall(IEVC.enableCollateral, (account, wbtcVault))\n});\n\n// Enable stETH vault as collateral\nitems[2] = IEVC.BatchItem({\n    onBehalfOfAccount: address(0),\n    targetContract: address(evc),\n    value: 0,\n    data: abi.encodeCall(IEVC.enableCollateral, (account, stethVault))\n});\n\nIEVC(evc).batch(items);",
+    "language": "solidity",
+    "description": "batch enable multiple collaterals"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Enable Vault as Collateral",
+    "type": "good",
+    "code": "// Check if vault is enabled as collateral\nbool isCollateral = IEVC(evc).isCollateralEnabled(account, vault);\n\n// Get all enabled collaterals for an account\naddress[] memory collaterals = IEVC(evc).getCollaterals(account);\n\n// Disable collateral (only works if not needed for health)\n// WARNING: Will fail if removing would make account unhealthy\nIEVC(evc).disableCollateral(account, vault);",
+    "language": "solidity",
+    "description": "checking and disabling collateral"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Enable Vault as Collateral",
+    "type": "good",
+    "code": "// Controllers loop through collaterals in order\n// Put highest-value collateral first for gas savings\n// reorderCollaterals swaps two collateral positions\n\n// Swap collateral at index 0 with collateral at index 2\nIEVC(evc).reorderCollaterals(account, 0, 2);\n\n// This moves the third collateral to first position\n// Multiple calls can be made to achieve desired ordering",
+    "language": "solidity",
+    "description": "reorder collaterals for gas optimization"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Delegate Control via Operators",
+    "type": "bad",
+    "code": "// NEVER share private keys or use unlimited approvals for automation\n// This is insecure and gives full control\nIERC20(token).approve(automationContract, type(uint256).max);",
+    "language": "solidity",
+    "description": "giving full wallet access"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Delegate Control via Operators",
+    "type": "good",
+    "code": "// Operators can only act on the specific account they're authorized for\n// Account owner can revoke at any time\n\n// Install an operator for a specific sub-account\nIEVC(evc).setAccountOperator(\n    account,           // The account to delegate\n    operatorAddress,   // Address that can act on behalf\n    true               // true = authorize, false = revoke\n);\n\n// The operator can now execute actions on this account via EVC",
+    "language": "solidity",
+    "description": "install operator for specific account"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Delegate Control via Operators",
+    "type": "good",
+    "code": "// Operator contract example - stop-loss implementation\ncontract StopLossOperator {\n    IEVC public immutable evc;\n    \n    function executeStopLoss(\n        address account,\n        address vault,\n        uint256 repayAmount\n    ) external {\n        // Verify conditions are met (price dropped below threshold)\n        require(shouldTriggerStopLoss(account), \"Conditions not met\");\n        \n        // Execute via EVC on behalf of the account\n        IEVC.BatchItem[] memory items = new IEVC.BatchItem[](2);\n        \n        // Repay debt\n        items[0] = IEVC.BatchItem({\n            onBehalfOfAccount: account,\n            targetContract: vault,\n            value: 0,\n            data: abi.encodeCall(IEVault.repay, (repayAmount, account))\n        });\n        \n        // Withdraw collateral to safety\n        items[1] = IEVC.BatchItem({\n            onBehalfOfAccount: account,\n            targetContract: collateralVault,\n            value: 0,\n            data: abi.encodeCall(IEVault.withdraw, (\n                type(uint256).max, \n                account, \n                account\n            ))\n        });\n        \n        evc.batch(items);\n    }\n}",
+    "language": "solidity",
+    "description": "operator executing on behalf of account"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Delegate Control via Operators",
+    "type": "good",
+    "code": "// Install operator\nawait evc.write.setAccountOperator([\n  userAccount,\n  operatorContractAddress,\n  true, // authorize\n]);\n\n// Check if operator is authorized\nconst isOperator = await evc.read.isAccountOperatorAuthorized([\n  userAccount,\n  operatorContractAddress,\n]);\n\n// Revoke operator access\nawait evc.write.setAccountOperator([\n  userAccount,\n  operatorContractAddress,\n  false, // revoke\n]);",
+    "language": "typescript",
+    "description": "TypeScript operator management"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Delegate Control via Operators",
+    "type": "good",
+    "code": "// Combine with hooks for fine-grained control\ncontract LimitedOperator {\n    // Only allow specific operations\n    mapping(bytes4 => bool) public allowedSelectors;\n    \n    function execute(\n        address account,\n        address target,\n        bytes calldata data\n    ) external {\n        bytes4 selector = bytes4(data[:4]);\n        require(allowedSelectors[selector], \"Operation not allowed\");\n        \n        IEVC.BatchItem[] memory items = new IEVC.BatchItem[](1);\n        items[0] = IEVC.BatchItem({\n            onBehalfOfAccount: account,\n            targetContract: target,\n            value: 0,\n            data: data\n        });\n        \n        IEVC(evc).batch(items);\n    }\n}",
+    "language": "solidity",
+    "description": "operator with limited scope via hooks"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Use Sub-Accounts for Isolated Positions",
+    "type": "bad",
+    "code": "// ERROR: Account can only have ONE controller at a time\nIEVC(evc).enableController(account, borrowVaultA);\nIEVC(evc).enableController(account, borrowVaultB);\n// Second call fails or overwrites first!",
+    "language": "solidity",
+    "description": "using same account for multiple borrows"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Use Sub-Accounts for Isolated Positions",
+    "type": "good",
+    "code": "// Sub-accounts share first 19 bytes, differ in last byte (0-255)\n// Account: 0x1234...5678XX where XX is the sub-account index\n\n// Get sub-account addresses\naddress subAccount0 = account;  // Original address is sub-account 0\naddress subAccount1 = address(uint160(account) ^ 1);  // XOR with index\naddress subAccount2 = address(uint160(account) ^ 2);\n\n// Each sub-account can have its own controller\nIEVC(evc).enableController(subAccount0, borrowVaultA);  // ETH borrow\nIEVC(evc).enableController(subAccount1, borrowVaultB);  // USDC borrow\nIEVC(evc).enableController(subAccount2, borrowVaultC);  // DAI borrow\n\n// Each position is isolated - liquidation of one doesn't affect others",
+    "language": "solidity",
+    "description": "use sub-accounts for different borrows"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Use Sub-Accounts for Isolated Positions",
+    "type": "good",
+    "code": "/// @notice Get sub-account address for a given index\n/// @param owner The primary account address\n/// @param subAccountId The sub-account index (0-255)\n/// @return The sub-account address\nfunction getSubAccount(address owner, uint8 subAccountId) \n    public \n    pure \n    returns (address) \n{\n    return address(uint160(owner) ^ uint160(subAccountId));\n}\n\n// Usage\naddress ethPosition = getSubAccount(msg.sender, 0);\naddress usdcPosition = getSubAccount(msg.sender, 1);\naddress daiPosition = getSubAccount(msg.sender, 2);",
+    "language": "solidity",
+    "description": "helper function for sub-account calculation"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Use Sub-Accounts for Isolated Positions",
+    "type": "good",
+    "code": "// Move collateral between sub-accounts without needing approvals\nconst subAccount0 = getSubAccount(account, 0);\nconst subAccount1 = getSubAccount(account, 1);\n\nconst batchItems = [\n  // Withdraw from sub-account 0\n  {\n    onBehalfOfAccount: subAccount0,\n    targetContract: collateralVault,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: eVaultABI,\n      functionName: 'withdraw',\n      args: [amount, subAccount1, subAccount0], // receiver is subAccount1\n    }),\n  },\n  // Deposit to sub-account 1 happens automatically via receiver\n];\n\n// Owner can operate on behalf of any sub-account\nawait evc.write.batch([batchItems]);",
+    "language": "typescript",
+    "description": "rebalancing between sub-accounts in a batch"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Use Sub-Accounts for Isolated Positions",
+    "type": "good",
+    "code": "// EVC tracks owner for sub-account groups\nfunction getAccountOwner(address account) external view returns (address) {\n    // Returns the primary address (sub-account 0) that controls this sub-account\n    return IEVC(evc).getAccountOwner(account);\n}\n\n// Verify ownership\naddress owner = IEVC(evc).getAccountOwner(subAccount5);\nrequire(owner == expectedOwner, \"Not owned by expected address\");",
+    "language": "solidity",
+    "description": "checking sub-account ownership"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Interest Rate Model Types and Configuration",
+    "type": "bad",
+    "code": "// WRONG: Using linear kink for a volatile asset that needs adaptive rates\n// This can lead to under/over-utilization and poor capital efficiency\naddress irm = kinkIRMFactory.deploy(\n    0,           // baseRate\n    4e27,        // slope1 (4%)\n    300e27,      // slope2 (300%)\n    0.9e18       // kink (90%)\n);\n// Static rates don't adapt to market conditions!",
+    "language": "solidity",
+    "description": "using wrong IRM for use case"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Interest Rate Model Types and Configuration",
+    "type": "good",
+    "code": "import {IRMBasePremium} from \"evk-periphery/IRM/IRMBasePremium.sol\";\n\n// Admin can adjust rates without redeploying\nIRMBasePremium irm = new IRMBasePremium(\n    evc,\n    admin,\n    1e26,         // baseRate: 1% base\n    5e26          // premiumRate: 5% premium (total 6%)\n);\n\n// Override premium for specific vaults\nirm.setRateOverride(specialVault, true, 2e26); // 3% total for this vault",
+    "language": "solidity",
+    "description": "choosing appropriate IRM type"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Configure EulerRouter for Price Resolution",
+    "type": "bad",
+    "code": "// Don't hardcode individual oracles in vaults\n// This makes upgrades and fixes impossible\nIEVault(vault).setOracle(specificOracleAdapter);\n// If oracle has issues, vault is stuck",
+    "language": "solidity",
+    "description": "hardcoding oracle in vault"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Configure EulerRouter for Price Resolution",
+    "type": "good",
+    "code": "import {EulerRouter} from \"euler-price-oracle/EulerRouter.sol\";\nimport {EulerRouterFactory} from \"evk-periphery/EulerRouterFactory/EulerRouterFactory.sol\";\n\n// Deploy router via factory (for verification by perspectives)\naddress router = EulerRouterFactory(factory).deploy(governor);\n\n// Configure pricing for asset pairs\nEulerRouter eulerRouter = EulerRouter(router);\n\n// Set direct oracle for ETH/USD\neulerRouter.govSetConfig(\n    weth,                    // Base asset\n    usd,                     // Quote asset  \n    chainlinkEthUsdOracle    // Oracle adapter address\n);\n\n// Set direct oracle for BTC/USD\neulerRouter.govSetConfig(\n    wbtc,\n    usd,\n    chainlinkBtcUsdOracle\n);",
+    "language": "solidity",
+    "description": "deploy and configure EulerRouter"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Configure EulerRouter for Price Resolution",
+    "type": "good",
+    "code": "// For TOKEN/USD when only TOKEN/ETH and ETH/USD exist\n// Router automatically chains: TOKEN -> ETH -> USD\n\n// Step 1: Configure TOKEN/ETH oracle\neulerRouter.govSetConfig(\n    tokenAddress,\n    weth,\n    tokenEthOracle  // e.g., Uniswap V3 TWAP\n);\n\n// Step 2: Configure ETH/USD oracle (if not already set)\neulerRouter.govSetConfig(\n    weth,\n    usd,\n    chainlinkEthUsdOracle\n);\n\n// Now TOKEN/USD queries work automatically via cross-pricing\n// Router will query TOKEN/ETH, then ETH/USD, and multiply\nuint256 tokenUsdPrice = eulerRouter.getQuote(1e18, tokenAddress, usd);",
+    "language": "solidity",
+    "description": "cross-pricing through intermediary"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Configure EulerRouter for Price Resolution",
+    "type": "good",
+    "code": "// For pricing vault shares in terms of underlying\n// Router uses convertToAssets() for accurate share valuation\n\n// Configure underlying asset pricing\neulerRouter.govSetConfig(\n    underlyingAsset,\n    usd,\n    underlyingOracle\n);\n\n// Enable vault share resolution (special handling)\neulerRouter.govSetResolvedVault(\n    vaultAddress,\n    true  // Enable automatic share->asset conversion\n);\n\n// Now queries for vault shares work:\n// vaultShares -> underlying -> USD\nuint256 shareValueUsd = eulerRouter.getQuote(1e18, vaultAddress, usd);",
+    "language": "solidity",
+    "description": "ERC-4626 vault share pricing"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Configure EulerRouter for Price Resolution",
+    "type": "good",
+    "code": "import { encodeFunctionData } from 'viem';\n\n// Batch configure multiple oracle routes\nconst configItems = [\n  { base: WETH, quote: USD, oracle: chainlinkEthUsd },\n  { base: WBTC, quote: USD, oracle: chainlinkBtcUsd },\n  { base: LINK, quote: ETH, oracle: uniswapLinkEth },\n  { base: UNI, quote: ETH, oracle: uniswapUniEth },\n];\n\nconst batchCalls = configItems.map(({ base, quote, oracle }) =>\n  encodeFunctionData({\n    abi: eulerRouterABI,\n    functionName: 'govSetConfig',\n    args: [base, quote, oracle],\n  })\n);\n\n// Execute via governor or multisig\nawait governor.executeBatch(router, batchCalls);",
+    "language": "typescript",
+    "description": "TypeScript router configuration"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Configure EulerRouter for Price Resolution",
+    "type": "good",
+    "code": "// Set fallback oracle for unregistered pairs\n// Useful for broad coverage with specific overrides\neulerRouter.govSetFallbackOracle(fallbackOracleAddress);\n\n// Query resolution order:\n// 1. Direct config for base/quote pair\n// 2. Cross-pricing via configured intermediaries\n// 3. Fallback oracle (if set)",
+    "language": "solidity",
+    "description": "fallback configuration"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy an Oracle Adapter",
+    "type": "bad",
+    "code": "// Chainlink returns (roundId, answer, startedAt, updatedAt, answeredInRound)\n// This raw interface is incompatible with Euler's IPriceOracle\n(, int256 answer,,,) = AggregatorV3Interface(feed).latestRoundData();\n// Also missing staleness checks, decimal handling, etc.",
+    "language": "solidity",
+    "description": "using Chainlink directly without adapter"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy an Oracle Adapter",
+    "type": "good",
+    "code": "import {ChainlinkOracle} from \"euler-price-oracle/adapter/chainlink/ChainlinkOracle.sol\";\n\n// Deploy adapter with configuration\nChainlinkOracle oracle = new ChainlinkOracle(\n    base,           // Base token address (e.g., WETH)\n    quote,          // Quote token address (e.g., USD reference)\n    feed,           // Chainlink feed address\n    maxStaleness    // Max age in seconds (e.g., 3600 for 1 hour)\n);\n\n// Adapter now implements IPriceOracle\n// getQuote(inAmount, base, quote) returns outAmount\nuint256 ethValueInUsd = oracle.getQuote(1e18, weth, usd);",
+    "language": "solidity",
+    "description": "deploy ChainlinkOracle adapter"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy an Oracle Adapter",
+    "type": "good",
+    "code": "// TypeScript: Fetching Pyth price updates\nasync function getPythUpdateData(feedIds: string[]): Promise<string[]> {\n  const response = await fetch(\n    `https://hermes.pyth.network/api/latest_vaas?ids[]=${feedIds.join('&ids[]=')}`\n  );\n  const data = await response.json();\n  return data.map((vaa: string) => `0x${vaa}`);\n}\n\n// Include price update in your transaction\nconst updateData = await getPythUpdateData([priceFeedId]);\nconst updateFee = await pythContract.read.getUpdateFee([updateData]);\n\n// Option 1: Separate transaction\nawait pythContract.write.updatePriceFeeds(updateData, { value: updateFee });\nawait vault.write.deposit([amount, receiver]);\n\n// Option 2: Batch via EVC (recommended)\nconst batchItems = [\n  {\n    targetContract: pythAddress,\n    onBehalfOfAccount: zeroAddress,\n    value: updateFee,\n    data: encodeFunctionData({\n      abi: pythABI,\n      functionName: 'updatePriceFeeds',\n      args: [updateData]\n    })\n  },\n  {\n    targetContract: vaultAddress,\n    onBehalfOfAccount: account,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: evaultABI,\n      functionName: 'deposit',\n      args: [amount, receiver]\n    })\n  }\n];\nawait evc.write.batch(batchItems, { value: updateFee });",
+    "language": "typescript",
+    "description": "deploy PythOracle adapter"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy an Oracle Adapter",
+    "type": "good",
+    "code": "import {UniswapV3Oracle} from \"euler-price-oracle/adapter/uniswap/UniswapV3Oracle.sol\";\n\n// TWAP oracle for manipulation resistance\nUniswapV3Oracle oracle = new UniswapV3Oracle(\n    tokenA,        // First token in pair\n    tokenB,        // Second token in pair\n    fee,           // Pool fee tier (500, 3000, or 10000)\n    twapWindow,    // TWAP window in seconds (e.g., 1800 for 30 min)\n    uniswapFactory // Uniswap V3 factory address\n);\n\n// TWAP provides manipulation-resistant pricing\n// Longer window = more resistant but slower to update",
+    "language": "solidity",
+    "description": "deploy UniswapV3 TWAP oracle"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy an Oracle Adapter",
+    "type": "good",
+    "code": "import {LidoOracle} from \"euler-price-oracle/adapter/lido/LidoOracle.sol\";\nimport {RateProviderOracle} from \"euler-price-oracle/adapter/rate/RateProviderOracle.sol\";\n\n// For wstETH/stETH (built-in Lido support)\nLidoOracle wstethOracle = new LidoOracle(wsteth, steth);\n\n// For other rate providers (e.g., Balancer)\nRateProviderOracle rateOracle = new RateProviderOracle(\n    baseToken,         // e.g., rETH\n    quoteToken,        // e.g., ETH\n    rateProvider       // Balancer rate provider address\n);",
+    "language": "solidity",
+    "description": "deploy rate provider oracle for LSTs"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Asset Prices from Oracles",
+    "type": "bad",
+    "code": "// Wrong: Oracles don't return \"price per token\"\nuint256 price = oracle.getPrice(token);\nuint256 value = tokenAmount * price;\n// getPrice() doesn't exist in IPriceOracle!",
+    "language": "solidity",
+    "description": "assuming unit price response"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Asset Prices from Oracles",
+    "type": "good",
+    "code": "import {IPriceOracle} from \"euler-price-oracle/interfaces/IPriceOracle.sol\";\n\n// IPriceOracle.getQuote: \"How much quote do I get for inAmount of base?\"\n// This is like asking \"How much USD is 1 ETH worth?\"\n\n// Get value of 1 ETH in USD\nuint256 ethInUsd = IPriceOracle(oracle).getQuote(\n    1e18,      // inAmount: 1 ETH (18 decimals)\n    weth,      // base: the token you have\n    usd        // quote: the token you want value in\n);\n// Returns: 2000e18 (if ETH = $2000)\n\n// Get value of 0.5 BTC in ETH\nuint256 btcInEth = IPriceOracle(oracle).getQuote(\n    0.5e8,     // inAmount: 0.5 BTC (8 decimals)  \n    wbtc,      // base: BTC\n    weth       // quote: ETH\n);\n// Returns: 15e18 (if 0.5 BTC = 15 ETH)",
+    "language": "solidity",
+    "description": "using getQuote for amount conversion"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Asset Prices from Oracles",
+    "type": "good",
+    "code": "import { OracleLens } from '@eulerxyz/evk-periphery';\n\n// OracleLens provides rich oracle information\nconst oracleInfo = await oracleLens.getOracleInfo(\n  oracleAddress,\n  [weth, wbtc, link],  // base tokens\n  [usd, usd, usd]       // quote tokens\n);\n\n// Access individual prices\noracleInfo.prices.forEach((priceInfo, i) => {\n  console.log(`${bases[i]}: ${priceInfo.quote} ${quotes[i]}`);\n  console.log(`  Oracle: ${priceInfo.oracle}`);\n  console.log(`  Success: ${priceInfo.success}`);\n});",
+    "language": "typescript",
+    "description": "using OracleLens for comprehensive data"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Asset Prices from Oracles",
+    "type": "good",
+    "code": "// getQuotes returns both bid and ask prices\n// Useful for more accurate risk calculations\n(uint256 bidOut, uint256 askOut) = IPriceOracle(oracle).getQuotes(\n    1e18,\n    weth,\n    usd\n);\n\n// bidOut: What you'd get if SELLING 1 ETH (lower)\n// askOut: What you'd pay to BUY 1 ETH (higher)\n// Spread = askOut - bidOut\n\n// For lending, use bid (selling collateral)\n// For borrowing, use ask (buying debt)\nuint256 collateralValue = (collateralAmount * bidOut) / 1e18;\nuint256 debtValue = (debtAmount * askOut) / 1e18;",
+    "language": "solidity",
+    "description": "bid/ask pricing for spreads"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Asset Prices from Oracles",
+    "type": "good",
+    "code": "async function safeGetQuote(\n  oracle: Address,\n  inAmount: bigint,\n  base: Address,\n  quote: Address\n): Promise<{ success: boolean; value: bigint; error?: string }> {\n  try {\n    const value = await publicClient.readContract({\n      address: oracle,\n      abi: iPriceOracleABI,\n      functionName: 'getQuote',\n      args: [inAmount, base, quote],\n    });\n    \n    return { success: true, value };\n  } catch (error) {\n    // Oracle might revert for various reasons:\n    // - Stale price\n    // - No liquidity (TWAP)\n    // - Unsupported pair\n    return { \n      success: false, \n      value: 0n,\n      error: error.message \n    };\n  }\n}\n\n// Usage with fallback\nconst result = await safeGetQuote(primaryOracle, amount, base, quote);\nif (!result.success) {\n  console.warn('Primary oracle failed, trying fallback');\n  const fallback = await safeGetQuote(fallbackOracle, amount, base, quote);\n  if (!fallback.success) {\n    throw new Error('All oracles failed');\n  }\n  return fallback.value;\n}",
+    "language": "typescript",
+    "description": "handling oracle failures"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Asset Prices from Oracles",
+    "type": "good",
+    "code": "// Pyth prices are pull-based - must update before use\nconst updateData = await fetch(\n  `https://hermes.pyth.network/api/latest_vaas?ids[]=${feedId}`\n).then(r => r.json());\n\nconst updateFee = await pythContract.read.getUpdateFee([updateData]);\nawait pythContract.write.updatePriceFeeds(updateData, { value: updateFee });\n\n// Now price query will work\nconst price = await oracle.read.getQuote([amount, base, quote]);",
+    "language": "typescript",
+    "description": "calculating portfolio value"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check Account Health Factor",
+    "type": "bad",
+    "code": "// Debt amount alone doesn't indicate liquidation risk\nuint256 debt = IEVault(vault).debtOf(account);\n// This tells you nothing about health - need to compare against collateral value",
+    "language": "solidity",
+    "description": "only checking debt amount"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check Account Health Factor",
+    "type": "good",
+    "code": "import { AccountLens } from '@eulerxyz/evk-periphery';\n\n// Get comprehensive account health info\n// accountLens.getAccountInfo(account, vault) returns AccountInfo struct\nconst accountInfo = await accountLens.read.getAccountInfo([account, controller]);\n\n// Access liquidity info from vaultAccountInfo\nconst liquidityInfo = accountInfo.vaultAccountInfo.liquidityInfo;\n\n// Check if query succeeded (liquidityInfo.queryFailure === false)\nif (liquidityInfo.queryFailure) {\n  console.error('Liquidity query failed:', liquidityInfo.queryFailureReason);\n  return;\n}\n\n// For liquidation health: collateralValueLiquidation / liabilityValueLiquidation\nconst collateralValueLiq = liquidityInfo.collateralValueLiquidation;\nconst liabilityValueLiq = liquidityInfo.liabilityValueLiquidation;\n\n// Calculate health: > 1.0 = healthy, < 1.0 = can be liquidated\nconst health = liabilityValueLiq > 0n \n  ? (collateralValueLiq * BigInt(1e18)) / liabilityValueLiq \n  : BigInt(2n ** 256n - 1n); // Infinite if no debt\n\n// timeToLiquidation: estimated seconds until liquidation\n// Negative means already liquidatable, special values:\n// TTL_INFINITY = max int256 (no debt or safe forever)\n// TTL_LIQUIDATION = min int256 (already liquidatable)\n// TTL_ERROR = max int256 - 1 (calculation error)\nconst ttl = liquidityInfo.timeToLiquidation;\n\nconsole.log(`Health: ${Number(health) / 1e18}`);\nconsole.log(`Liability: ${liabilityValueLiq}`);\nconsole.log(`Collateral: ${collateralValueLiq}`);\nconsole.log(`Time to Liquidation: ${ttl}`);",
+    "language": "typescript",
+    "description": "using AccountLens for health check"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check Account Health Factor",
+    "type": "good",
+    "code": "// Check if account status is valid (will revert if unhealthy)\n// This is what vaults call during operations\ntry IEVault(controller).checkAccountStatus(account, collaterals) {\n    // Account is healthy\n} catch {\n    // Account would fail health check\n}\n\n// Alternative: Use the EVC to check\n(bool isHealthy, ) = IEVC(evc).call(\n    account,\n    address(controller),\n    abi.encodeCall(IEVault.checkAccountStatus, (account, collaterals))\n);",
+    "language": "solidity",
+    "description": "on-chain health check via vault"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check Account Health Factor",
+    "type": "good",
+    "code": "/// @notice Calculate health factor for an account\n/// @param account The account to check\n/// @param controller The liability vault (controller)\n/// @return healthFactor The health ratio (1e18 = 1.0)\nfunction calculateHealthFactor(\n    address account,\n    address controller\n) public view returns (uint256 healthFactor) {\n    // Get debt value in unit of account\n    uint256 debtValue = getDebtValue(account, controller);\n    if (debtValue == 0) return type(uint256).max; // No debt = infinite health\n    \n    // Get risk-adjusted collateral value\n    uint256 collateralValue = 0;\n    address[] memory collaterals = IEVC(evc).getCollaterals(account);\n    \n    for (uint256 i = 0; i < collaterals.length; i++) {\n        address collateral = collaterals[i];\n        \n        // Get collateral amount\n        uint256 shares = IEVault(collateral).balanceOf(account);\n        uint256 assets = IEVault(collateral).convertToAssets(shares);\n        \n        // Get LTV for this collateral relative to controller\n        uint16 liquidationLTV = IEVault(controller).LTVLiquidation(collateral);\n        \n        // Get collateral price in unit of account\n        uint256 price = getPrice(collateral, controller);\n        \n        // Risk-adjusted value\n        collateralValue += (assets * price * liquidationLTV) / (1e18 * 1e4);\n    }\n    \n    // Health factor = collateral / debt\n    healthFactor = (collateralValue * 1e18) / debtValue;\n}",
+    "language": "solidity",
+    "description": "calculating health factor manually"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check Account Health Factor",
+    "type": "good",
+    "code": "// Monitor health and alert when below threshold\nconst HEALTH_THRESHOLD = 1.2e18; // Alert at 1.2 health\n\nasync function monitorHealth(account: Address, controller: Address) {\n  const accountInfo = await accountLens.read.getAccountInfo([account, controller]);\n  const liquidityInfo = accountInfo.vaultAccountInfo.liquidityInfo;\n  \n  const collateral = liquidityInfo.collateralValueLiquidation;\n  const liability = liquidityInfo.liabilityValueLiquidation;\n  \n  if (liability === 0n) {\n    console.log('No debt - infinite health');\n    return;\n  }\n  \n  const health = (collateral * BigInt(1e18)) / liability;\n  \n  if (health < BigInt(HEALTH_THRESHOLD)) {\n    console.warn(`⚠️ Low health: ${Number(health) / 1e18}`);\n    \n    // Calculate required collateral to reach safe health\n    const targetHealth = 1.5e18;\n    const requiredCollateral = (liability * BigInt(targetHealth)) / BigInt(1e18) - collateral;\n    \n    console.log(`Need ${requiredCollateral} more collateral value for 1.5 health`);\n  }\n}\n\n// Run monitoring loop\nsetInterval(() => monitorHealth(account, controller), 60000);",
+    "language": "typescript",
+    "description": "setting up health monitoring"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Risk Curators",
+    "type": "bad",
+    "code": "// WRONG: Only authorized addresses can modify vault config\nIEVault vault = IEVault(vaultAddress);\nvault.setLTV(collateral, 0.8e4, 0.9e4, 0); // Will revert!\nvault.setCaps(1000000e18, 500000e18);       // Will revert!",
+    "language": "solidity",
+    "description": "assuming anyone can configure vaults"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Risk Curators",
+    "type": "good",
+    "code": "import {IEVault} from \"evk/EVault/IEVault.sol\";\n\nIEVault vault = IEVault(vaultAddress);\n\n// Check governance roles\naddress governorAdmin = vault.governorAdmin();     // Can change all settings\naddress feeReceiver = vault.feeReceiver();         // Receives protocol fees\n\n// Governance hierarchy in Euler:\n// 1. Governor Admin - full control over vault configuration\n// 2. Fee Receiver - receives interest fees\n// 3. Hook Target - can implement additional access control\n\n// Only governor can call these functions:\n// - setLTV(collateral, borrowLTV, liquidationLTV, rampDuration)\n// - setCaps(supplyCap, borrowCap)\n// - setInterestRateModel(irm)\n// - setInterestFee(fee)\n// - setHookConfig(hookTarget, hookedOps)\n// - setConfigFlags(flags)\n// - setGovernorAdmin(newGovernor)",
+    "language": "solidity",
+    "description": "understanding governance roles"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Risk Curators",
+    "type": "good",
+    "code": "import {CapRiskSteward} from \"evk-periphery/Governor/CapRiskSteward.sol\";\n\n// CapRiskSteward allows limited cap adjustments without full governance\n// This enables faster response to market conditions\n\n// Deploy risk steward with limits\nCapRiskSteward steward = new CapRiskSteward(\n    evc,\n    admin,\n    3 days,      // riskSteerCooldown: minimum time between adjustments\n    0.1e18       // riskSteerCapLimit: max 10% change per adjustment\n);\n\n// Add vault to steward management\nsteward.setRiskSteerVault(vaultAddress, true);\n\n// Steward can adjust caps within limits\nsteward.setSupplyCap(vaultAddress, newSupplyCap);\nsteward.setBorrowCap(vaultAddress, newBorrowCap);",
+    "language": "solidity",
+    "description": "implementing risk steward pattern"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Risk Curators",
+    "type": "good",
+    "code": "import {GovernedPerspective} from \"evk-periphery/Perspectives/deployed/GovernedPerspective.sol\";\n\n// GovernedPerspective maintains whitelist of trusted vaults\nGovernedPerspective perspective = GovernedPerspective(perspectiveAddress);\n\n// Only owner can add/remove vaults\nperspective.perspectiveVerify(vaultAddress, true);  // Add to whitelist\nperspective.perspectiveUnverify(vaultAddress);       // Remove from whitelist\n\n// Check if vault is verified (trusted)\nbool isVerified = perspective.isVerified(vaultAddress);",
+    "language": "solidity",
+    "description": "GovernedPerspective for trusted vaults"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Risk Curators",
+    "type": "good",
+    "code": "import { getContract } from 'viem';\n\nconst vault = getContract({\n  address: vaultAddress,\n  abi: evaultABI,\n  client: publicClient,\n});\n\n// Check who governs this vault\nconst governor = await vault.read.governorAdmin();\nconst feeReceiver = await vault.read.feeReceiver();\nconst [hookTarget, hookedOps] = await vault.read.hookConfig();\n\nconsole.log(`Governor: ${governor}`);\nconsole.log(`Fee Receiver: ${feeReceiver}`);\nconsole.log(`Hook Target: ${hookTarget}`);\n\n// Check if vault is in governed perspective (Euler-vetted)\nconst perspective = getContract({\n  address: governedPerspectiveAddress,\n  abi: perspectiveABI,\n  client: publicClient,\n});\n\nconst isEulerVerified = await perspective.read.isVerified([vaultAddress]);\nconsole.log(`Euler Verified: ${isEulerVerified}`);",
+    "language": "typescript",
+    "description": "using Guardian for emergency actions"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "How Liquidation Works on Euler",
+    "type": "bad",
+    "code": "// Liquidation is not always profitable!\n// Must check discount, gas costs, and oracle prices\nIEVault(vault).liquidate(violator, collateral, maxRepay, 0);\n// May revert or result in loss if not checked properly",
+    "language": "solidity",
+    "description": "assuming liquidation is always profitable"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "How Liquidation Works on Euler",
+    "type": "good",
+    "code": "// Check liquidation eligibility\nfunction checkLiquidation(\n    address vault,\n    address violator,\n    address collateral\n) public view returns (\n    bool isLiquidatable,\n    uint256 maxRepay,\n    uint256 maxYield\n) {\n    // Check health - must be below 1.0\n    address[] memory collaterals = IEVC(evc).getCollaterals(violator);\n    \n    try IEVault(vault).checkAccountStatus(violator, collaterals) {\n        // Account is healthy - cannot liquidate\n        return (false, 0, 0);\n    } catch {\n        // Account is unhealthy - check liquidation details\n    }\n    \n    // Get liquidation parameters\n    // checkLiquidation(liquidator, violator, collateral) - 3 params\n    (maxRepay, maxYield) = IEVault(vault).checkLiquidation(\n        msg.sender,  // liquidator address\n        violator,\n        collateral\n    );\n    \n    isLiquidatable = maxRepay > 0;\n}",
+    "language": "solidity",
+    "description": "checking if account is liquidatable"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "How Liquidation Works on Euler",
+    "type": "good",
+    "code": "// Step 1: Verify liquidation is profitable\n// checkLiquidation(liquidator, violator, collateral) returns (maxRepay, maxYield)\n(uint256 maxRepay, uint256 maxYield) = IEVault(vault).checkLiquidation(\n    address(this),  // liquidator\n    violator,\n    collateral\n);\n\n// Calculate if profitable after gas\nuint256 repayValue = maxRepay * debtPrice / 1e18;\nuint256 yieldValue = maxYield * collateralPrice / 1e18;\nuint256 profit = yieldValue - repayValue;\nrequire(profit > estimatedGasCost, \"Not profitable\");\n\n// Step 2: Approve debt tokens\nIERC20(debtAsset).approve(vault, maxRepay);\n\n// Step 3: Execute liquidation via EVC's controlCollateral\n// This allows the vault to seize collateral on behalf of liquidator\nIEVC.BatchItem[] memory items = new IEVC.BatchItem[](1);\nitems[0] = IEVC.BatchItem({\n    onBehalfOfAccount: address(this),\n    targetContract: vault,\n    value: 0,\n    data: abi.encodeCall(\n        IEVault.liquidate,\n        (violator, collateral, maxRepay, 0)\n    )\n});\n\nIEVC(evc).batch(items);",
+    "language": "solidity",
+    "description": "executing a liquidation"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "How Liquidation Works on Euler",
+    "type": "good",
+    "code": "// Use flash loan to liquidate without capital\nconst batchItems = [\n  // 1. Flash borrow the debt asset\n  {\n    onBehalfOfAccount: liquidator,\n    targetContract: flashLoanVault,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: eVaultABI,\n      functionName: 'borrow',\n      args: [repayAmount, liquidator],\n    }),\n  },\n  // 2. Execute liquidation\n  {\n    onBehalfOfAccount: liquidator,\n    targetContract: debtVault,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: eVaultABI,\n      functionName: 'liquidate',\n      args: [violator, collateralVault, repayAmount, 0],\n    }),\n  },\n  // 3. Swap seized collateral for debt asset\n  {\n    onBehalfOfAccount: liquidator,\n    targetContract: swapRouter,\n    value: 0n,\n    data: swapCalldata,\n  },\n  // 4. Repay flash loan\n  {\n    onBehalfOfAccount: liquidator,\n    targetContract: flashLoanVault,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: eVaultABI,\n      functionName: 'repay',\n      args: [repayAmount, liquidator],\n    }),\n  },\n];\n\nawait evc.batch(batchItems);",
+    "language": "typescript",
+    "description": "liquidation with flash loan"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Monitor Position Health",
+    "type": "bad",
+    "code": "// Health at borrow time doesn't protect you later\nuint256 healthAtBorrow = calculateHealth(account);\nrequire(healthAtBorrow > 1.2e18, \"Insufficient health\");\nIEVault(vault).borrow(amount, account);\n// Days later, prices move and account gets liquidated!",
+    "language": "solidity",
+    "description": "checking health only at deposit/borrow time"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Monitor Position Health",
+    "type": "good",
+    "code": "import { VaultLens, AccountLens } from '@eulerxyz/evk-periphery';\n\ninterface PositionStatus {\n  account: Address;\n  controller: Address;\n  healthFactor: bigint;\n  totalDebt: bigint;\n  totalCollateral: bigint;\n  collaterals: CollateralInfo[];\n  riskLevel: 'safe' | 'warning' | 'danger' | 'liquidatable';\n}\n\nasync function getPositionStatus(\n  account: Address,\n  controller: Address\n): Promise<PositionStatus> {\n  const accountInfo = await accountLens.getAccountInfo(account, controller);\n  const collaterals = await evc.getCollaterals(account);\n  \n  // Gather collateral details\n  const collateralInfos = await Promise.all(\n    collaterals.map(async (vault) => {\n      const vaultInfo = await vaultLens.getVaultInfoDynamic(vault);\n      const balance = await IEVault(vault).balanceOf(account);\n      const ltv = await IEVault(controller).LTVLiquidation(vault);\n      \n      return {\n        vault,\n        balance,\n        value: vaultInfo.shareValue * balance / 1e18,\n        ltv,\n      };\n    })\n  );\n  \n  // Determine risk level\n  const health = accountInfo.healthScore;\n  let riskLevel: PositionStatus['riskLevel'];\n  \n  if (health < 1e18) riskLevel = 'liquidatable';\n  else if (health < 1.1e18) riskLevel = 'danger';\n  else if (health < 1.3e18) riskLevel = 'warning';\n  else riskLevel = 'safe';\n  \n  return {\n    account,\n    controller,\n    healthFactor: health,\n    totalDebt: accountInfo.liabilityValue,\n    totalCollateral: accountInfo.collateralValueBorrowing,\n    collaterals: collateralInfos,\n    riskLevel,\n  };\n}",
+    "language": "typescript",
+    "description": "comprehensive position monitoring"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Monitor Position Health",
+    "type": "good",
+    "code": "const ALERT_THRESHOLDS = {\n  warning: 1.3e18,  // 1.3 health - send warning\n  danger: 1.15e18,  // 1.15 health - urgent action needed\n  critical: 1.05e18 // 1.05 health - immediate intervention\n};\n\nclass PositionMonitor {\n  private positions: Map<string, PositionStatus> = new Map();\n  \n  async monitor(accounts: Address[], controller: Address) {\n    for (const account of accounts) {\n      const status = await getPositionStatus(account, controller);\n      const key = `${account}-${controller}`;\n      const previous = this.positions.get(key);\n      \n      // Check for risk level changes\n      if (!previous || previous.riskLevel !== status.riskLevel) {\n        await this.handleRiskChange(status, previous?.riskLevel);\n      }\n      \n      // Check for rapid health decline\n      if (previous) {\n        const healthDrop = previous.healthFactor - status.healthFactor;\n        const dropPercent = (healthDrop * 100n) / previous.healthFactor;\n        \n        if (dropPercent > 10n) {\n          await this.alertRapidDecline(status, dropPercent);\n        }\n      }\n      \n      this.positions.set(key, status);\n    }\n  }\n  \n  private async handleRiskChange(\n    status: PositionStatus, \n    previousLevel?: string\n  ) {\n    switch (status.riskLevel) {\n      case 'warning':\n        console.warn(`⚠️ Health warning: ${status.healthFactor / 1e18}`);\n        // Send notification\n        break;\n      case 'danger':\n        console.error(`🚨 Danger: Health at ${status.healthFactor / 1e18}`);\n        // Trigger automated protection\n        await this.initiateProtection(status);\n        break;\n      case 'liquidatable':\n        console.error(`💀 Liquidatable! Health: ${status.healthFactor / 1e18}`);\n        // Emergency response\n        break;\n    }\n  }\n  \n  private async initiateProtection(status: PositionStatus) {\n    // Options:\n    // 1. Add more collateral\n    // 2. Partial repay\n    // 3. Close position entirely\n    console.log('Initiating automated protection...');\n  }\n}\n\n// Run monitor every 30 seconds\nconst monitor = new PositionMonitor();\nsetInterval(() => monitor.monitor(watchedAccounts, controller), 30000);",
+    "language": "typescript",
+    "description": "automated monitoring with alerts"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Monitor Position Health",
+    "type": "good",
+    "code": "contract HealthKeeper {\n    IEVC public immutable evc;\n    uint256 public constant PROTECTION_THRESHOLD = 1.15e18;\n    \n    // Track positions that want protection\n    mapping(address => mapping(address => bool)) public watchedPositions;\n    \n    function registerForProtection(address account, address controller) \n        external \n    {\n        require(\n            msg.sender == IEVC(evc).getAccountOwner(account),\n            \"Not owner\"\n        );\n        watchedPositions[account][controller] = true;\n    }\n    \n    function executeProtection(\n        address account,\n        address controller,\n        uint256 repayAmount\n    ) external {\n        require(watchedPositions[account][controller], \"Not watched\");\n        \n        // Check health is below threshold\n        uint256 health = calculateHealth(account, controller);\n        require(health < PROTECTION_THRESHOLD, \"Health sufficient\");\n        \n        // Execute protection action (requires operator authorization)\n        IEVC.BatchItem[] memory items = new IEVC.BatchItem[](1);\n        items[0] = IEVC.BatchItem({\n            onBehalfOfAccount: account,\n            targetContract: controller,\n            value: 0,\n            data: abi.encodeCall(IEVault.repay, (repayAmount, account))\n        });\n        \n        evc.batch(items);\n    }\n}",
+    "language": "solidity",
+    "description": "on-chain monitoring with keeper"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Security and Audits",
+    "type": "bad",
+    "code": "// WRONG: Using unverified vaults without checks\nIEVault vault = IEVault(userProvidedVault);\nvault.deposit(amount, receiver); // Could be malicious!",
+    "language": "solidity",
+    "description": "ignoring security considerations"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Security and Audits",
+    "type": "good",
+    "code": "import {GenericFactory} from \"evk/GenericFactory/GenericFactory.sol\";\nimport {IPerspective} from \"evk-periphery/Perspectives/implementation/interfaces/IPerspective.sol\";\n\n// Option 1: Check if deployed by official factory\nGenericFactory factory = GenericFactory(EVAULT_FACTORY);\nrequire(factory.isProxy(vaultAddress), \"Not EVK vault\");\n\n// Option 2: Check if verified by Euler governance\nIPerspective governedPerspective = IPerspective(GOVERNED_PERSPECTIVE);\nrequire(governedPerspective.isVerified(vaultAddress), \"Not Euler verified\");\n\n// Option 3: Check specific perspective based on vault type\nIPerspective escrowPerspective = IPerspective(ESCROW_PERSPECTIVE);\nbool isEscrow = escrowPerspective.isVerified(vaultAddress);",
+    "language": "solidity",
+    "description": "verifying vault authenticity"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Security and Audits",
+    "type": "good",
+    "code": "// 1. Always use EVC for cross-vault operations\n// This ensures proper status checks and atomicity\nIEVC evc = IEVC(EVC_ADDRESS);\n\nevc.batch(items); // Atomic, with deferred checks\n\n// 2. Check account health before and after operations\n(uint256 collateralValue, uint256 liabilityValue) = \n    IEVault(vault).accountLiquidity(account, false);\n\n// 3. Use approved oracles only\naddress oracle = IEVault(vault).oracle();\nrequire(isApprovedOracle(oracle), \"Unknown oracle\");\n\n// 4. Verify IRM is from known factory\naddress irm = IEVault(vault).interestRateModel();\nrequire(irmRegistry.isRegistered(irm), \"Unknown IRM\");",
+    "language": "solidity",
+    "description": "safe integration patterns"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Execute Swaps on EulerSwap",
+    "type": "bad",
+    "code": "// Large swaps may exceed pool liquidity limits\npool.swap(hugeAmount, 0, recipient, \"\");\n// Reverts if amount exceeds getLimits()",
+    "language": "solidity",
+    "description": "swap without checking limits"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Execute Swaps on EulerSwap",
+    "type": "good",
+    "code": "import {IEulerSwap} from \"euler-swap/interfaces/IEulerSwap.sol\";\n\n// Step 1: Get quote and check limits\n// computeQuote(tokenIn, tokenOut, amount, exactIn)\nuint256 amountOut = IEulerSwap(pool).computeQuote(tokenIn, tokenOut, amountIn, true);\nuint256 minOut = amountOut * 995 / 1000; // 0.5% slippage\n\n// Step 2: Transfer input tokens to pool\nIERC20(tokenIn).transfer(pool, amountIn);\n\n// Step 3: Execute swap (Uniswap V2 style)\n// amount0Out and amount1Out - one is your output, other is 0\n(address asset0,) = IEulerSwap(pool).getAssets();\nbool tokenInIsToken0 = tokenIn == asset0;\n\nIEulerSwap(pool).swap(\n    tokenInIsToken0 ? 0 : minOut,       // amount0Out\n    tokenInIsToken0 ? minOut : 0,        // amount1Out\n    recipient,                            // to\n    \"\"                                    // data (empty for simple swap)\n);",
+    "language": "solidity",
+    "description": "basic swap execution"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Execute Swaps on EulerSwap",
+    "type": "good",
+    "code": "import {IEulerSwapPeriphery} from \"euler-swap/interfaces/IEulerSwapPeriphery.sol\";\n\n// Periphery handles token transfers and slippage checks\n\n// Exact input swap\nIERC20(tokenIn).approve(periphery, amountIn);\n\nuint256 amountOut = IEulerSwapPeriphery(periphery).swapExactIn(\n    pool,\n    amountIn,\n    minAmountOut,     // Slippage protection\n    tokenIn,\n    recipient,\n    deadline          // Transaction deadline\n);\n\n// Exact output swap\nIERC20(tokenIn).approve(periphery, maxAmountIn);\n\nuint256 amountIn = IEulerSwapPeriphery(periphery).swapExactOut(\n    pool,\n    amountOut,        // Exact amount to receive\n    maxAmountIn,      // Max willing to pay\n    tokenIn,\n    recipient,\n    deadline\n);",
+    "language": "solidity",
+    "description": "using EulerSwapPeriphery for safety"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Execute Swaps on EulerSwap",
+    "type": "good",
+    "code": "import { encodeFunctionData } from 'viem';\n\nasync function executeSwap(\n  pool: Address,\n  tokenIn: Address,\n  amountIn: bigint,\n  minAmountOut: bigint,\n  recipient: Address\n) {\n  // Use getAssets() to get token addresses\n  const [asset0, asset1] = await publicClient.readContract({\n    address: pool,\n    abi: eulerSwapABI,\n    functionName: 'getAssets',\n  });\n  \n  const tokenInIsToken0 = tokenIn.toLowerCase() === asset0.toLowerCase();\n  \n  // Approve and transfer in one tx via EVC batch\n  const batchItems = [\n    // Transfer tokens to pool\n    {\n      onBehalfOfAccount: sender,\n      targetContract: tokenIn,\n      value: 0n,\n      data: encodeFunctionData({\n        abi: erc20ABI,\n        functionName: 'transfer',\n        args: [pool, amountIn],\n      }),\n    },\n    // Execute swap\n    {\n      onBehalfOfAccount: sender,\n      targetContract: pool,\n      value: 0n,\n      data: encodeFunctionData({\n        abi: eulerSwapABI,\n        functionName: 'swap',\n        args: [\n          tokenInIsToken0 ? 0n : minAmountOut,\n          tokenInIsToken0 ? minAmountOut : 0n,\n          recipient,\n          '0x',\n        ],\n      }),\n    },\n  ];\n  \n  return await evc.write.batch([batchItems]);\n}",
+    "language": "typescript",
+    "description": "TypeScript swap execution"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Execute Swaps on EulerSwap",
+    "type": "good",
+    "code": "// Flash swaps: receive tokens first, pay in callback\ncontract FlashSwapper {\n    function executeFlashSwap(\n        address pool,\n        uint256 amount0Out,\n        uint256 amount1Out,\n        bytes calldata data\n    ) external {\n        // Request tokens without paying upfront\n        IEulerSwap(pool).swap(amount0Out, amount1Out, address(this), data);\n    }\n    \n    // Callback from pool\n    function eulerSwapCall(\n        address sender,\n        uint256 amount0,\n        uint256 amount1,\n        bytes calldata data\n    ) external {\n        // We've received the output tokens\n        // Now we must pay the input tokens\n        \n        address pool = msg.sender;\n        (address token0, address token1) = IEulerSwap(pool).getAssets();\n        \n        // Calculate required input (with fee)\n        // computeQuote(tokenIn, tokenOut, amount, exactIn)\n        address tokenIn = amount0 > 0 ? token1 : token0;\n        address tokenOut = amount0 > 0 ? token0 : token1;\n        uint256 amountIn = IEulerSwap(pool).computeQuote(\n            tokenIn,\n            tokenOut,\n            amount0 > 0 ? amount0 : amount1,\n            false // exact output\n        );\n        \n        // Do something with received tokens (arbitrage, etc.)\n        // ...\n        \n        // Pay back input tokens\n        IERC20(tokenIn).transfer(pool, amountIn);\n    }\n}",
+    "language": "solidity",
+    "description": "flash swap with callback"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Execute Swaps on EulerSwap",
+    "type": "good",
+    "code": "// For routes through multiple pools\nasync function multiHopSwap(\n  route: Address[], // [tokenA, pool1, tokenB, pool2, tokenC]\n  amountIn: bigint,\n  minFinalOut: bigint\n) {\n  let currentAmount = amountIn;\n  \n  for (let i = 0; i < route.length - 1; i += 2) {\n    const tokenIn = route[i];\n    const pool = route[i + 1];\n    const tokenOut = route[i + 2];\n    \n    // Quote this hop\n    const [hopOut] = await IEulerSwap(pool).computeQuote(currentAmount, true);\n    \n    // Execute hop\n    await executeSwap(pool, tokenIn, currentAmount, hopOut * 99n / 100n, sender);\n    \n    currentAmount = hopOut;\n  }\n  \n  require(currentAmount >= minFinalOut, 'Insufficient output');\n}",
+    "language": "typescript",
+    "description": "multi-hop swap via aggregator"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check EulerSwap Liquidity Limits",
+    "type": "bad",
+    "code": "// EulerSwap pools have finite, directional limits\n// Unlike AMMs, liquidity comes from lending positions\npool.swap(1_000_000e18, 0, recipient, \"\");\n// May fail if exceeds pool's borrowing capacity",
+    "language": "solidity",
+    "description": "assuming unlimited liquidity"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check EulerSwap Liquidity Limits",
+    "type": "good",
+    "code": "import {IEulerSwap} from \"euler-swap/interfaces/IEulerSwap.sol\";\n\n// getLimits(tokenIn, tokenOut) returns two values:\n// - inLimit: max tokenIn that can be sold\n// - outLimit: max tokenOut that can be bought\n(uint256 inLimit, uint256 outLimit) = IEulerSwap(pool).getLimits(tokenIn, tokenOut);\n\n// Check if your swap is within limits\nrequire(amountIn <= inLimit, \"Exceeds input limit\");\n// Output will be checked by computeQuote\n\n// For the reverse direction, call with swapped tokens:\n(uint256 reverseInLimit, uint256 reverseOutLimit) = IEulerSwap(pool).getLimits(tokenOut, tokenIn);",
+    "language": "solidity",
+    "description": "check limits before swapping"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check EulerSwap Liquidity Limits",
+    "type": "good",
+    "code": "interface PoolLiquidity {\n  pool: Address;\n  tokenIn: Address;\n  tokenOut: Address;\n  limits: {\n    inLimit: bigint;   // max tokenIn that can be sold\n    outLimit: bigint;  // max tokenOut that can be bought\n  };\n  factors: {\n    vaultCash: bigint;\n    borrowCap: bigint;\n    supplyCap: bigint;\n    utilization: number;\n  };\n}\n\nasync function analyzeLiquidity(pool: Address, tokenIn: Address, tokenOut: Address): Promise<PoolLiquidity> {\n  // getLimits takes tokenIn and tokenOut addresses\n  const [inLimit, outLimit] = await publicClient.readContract({\n    address: pool,\n    abi: eulerSwapABI,\n    functionName: 'getLimits',\n    args: [tokenIn, tokenOut],\n  });\n  \n  // Limits depend on:\n  // 1. Available cash in lending vaults (for output)\n  // 2. Remaining borrow capacity (for borrowing output)\n  // 3. Supply caps (for depositing input as collateral)\n  // 4. Current utilization of vaults\n  \n  const vault0 = await pool.vault0();\n  const vault1 = await pool.vault1();\n  \n  // Get static params for vault info\n  const staticParams = await publicClient.readContract({\n    address: pool,\n    abi: eulerSwapABI,\n    functionName: 'getStaticParams',\n  });\n  \n  const vault0Info = await vaultLens.getVaultInfoDynamic(staticParams.supplyVault0);\n  \n  return {\n    pool,\n    tokenIn,\n    tokenOut,\n    limits: {\n      inLimit,   // max tokenIn that can be sold\n      outLimit,  // max tokenOut that can be bought\n    },\n    factors: {\n      vaultCash: vault0Info.totalCash,\n      borrowCap: vault0Info.borrowCap,\n      supplyCap: vault0Info.supplyCap,\n      utilization: vault0Info.totalBorrowed / vault0Info.totalAssets,\n    },\n  };\n}",
+    "language": "typescript",
+    "description": "understanding limit factors"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check EulerSwap Liquidity Limits",
+    "type": "good",
+    "code": "// If swap exceeds limits, split into multiple smaller swaps\nfunction splitSwap(\n    address pool,\n    uint256 totalAmountIn,\n    address tokenIn,\n    address tokenOut,\n    uint256 minTotalOut\n) external returns (uint256 totalOut) {\n    (address asset0,) = IEulerSwap(pool).getAssets();\n    bool sellingToken0 = tokenIn == asset0;\n    \n    uint256 remaining = totalAmountIn;\n    \n    while (remaining > 0) {\n        // Check current limits - getLimits(tokenIn, tokenOut)\n        (uint256 inLimit,) = IEulerSwap(pool).getLimits(tokenIn, tokenOut);\n        \n        if (inLimit == 0) {\n            // Pool at capacity - wait or use different pool\n            break;\n        }\n        \n        uint256 swapAmount = remaining > inLimit ? inLimit : remaining;\n        \n        // Get quote and execute swap\n        uint256 out = IEulerSwap(pool).computeQuote(tokenIn, tokenOut, swapAmount, true);\n        IERC20(tokenIn).transfer(pool, swapAmount);\n        IEulerSwap(pool).swap(\n            sellingToken0 ? 0 : out,\n            sellingToken0 ? out : 0,\n            address(this),\n            \"\"\n        );\n        \n        totalOut += out;\n        remaining -= swapAmount;\n        \n        // Note: In practice, limits may not refresh within same tx\n        // This pattern works better across blocks\n    }\n    \n    require(totalOut >= minTotalOut, \"Insufficient output\");\n}",
+    "language": "solidity",
+    "description": "splitting large swaps"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check EulerSwap Liquidity Limits",
+    "type": "good",
+    "code": "async function isPoolHealthy(\n  pool: Address,\n  token0: Address,\n  token1: Address\n): Promise<boolean> {\n  // Check if pool can fulfill swaps in both directions\n  // getLimits(tokenIn, tokenOut) returns (inLimit, outLimit)\n  const [limit0To1In, limit0To1Out] = await publicClient.readContract({\n    address: pool,\n    abi: eulerSwapABI,\n    functionName: 'getLimits',\n    args: [token0, token1],\n  });\n  \n  const [limit1To0In, limit1To0Out] = await publicClient.readContract({\n    address: pool,\n    abi: eulerSwapABI,\n    functionName: 'getLimits',\n    args: [token1, token0],\n  });\n  \n  // Pool should have meaningful limits in both directions\n  const MIN_MEANINGFUL_LIMIT = 1000n * 10n ** 18n; // $1000 worth\n  \n  const hasForwardLiquidity = limit0To1In > MIN_MEANINGFUL_LIMIT;\n  const hasReverseLiquidity = limit1To0In > MIN_MEANINGFUL_LIMIT;\n  \n  // Check pool is registered and not abandoned\n  const isRegistered = await registry.isRegistered(pool);\n  \n  return hasForwardLiquidity && hasReverseLiquidity && isRegistered;\n}\n\n// Find pools with best liquidity for your swap size\nasync function findLiquidPools(\n  tokenIn: Address,\n  tokenOut: Address,\n  requiredAmount: bigint\n): Promise<Address[]> {\n  const allPools = await registry.getPools(tokenIn, tokenOut);\n  \n  const liquidPools = await Promise.all(\n    allPools.map(async (pool) => {\n      const [inLimit,] = await publicClient.readContract({\n        address: pool,\n        abi: eulerSwapABI,\n        functionName: 'getLimits',\n        args: [tokenIn, tokenOut],\n      });\n      return inLimit >= requiredAmount ? pool : null;\n    })\n  );\n  \n  return liquidPools.filter((p): p is Address => p !== null);\n}",
+    "language": "typescript",
+    "description": "monitoring pool health"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Swap Quotes from EulerSwap",
+    "type": "bad",
+    "code": "// Quotes can change between blocks!\nuint256 quote = pool.computeQuote(amountIn, true);\n// ... time passes, other transactions happen ...\npool.swap(amountIn, quote, recipient, \"\");\n// May revert if price moved - quote is stale",
+    "language": "solidity",
+    "description": "using old quote for execution"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Swap Quotes from EulerSwap",
+    "type": "good",
+    "code": "import {IEulerSwap} from \"euler-swap/interfaces/IEulerSwap.sol\";\n\n// Get quote for exact input swap\n// computeQuote(tokenIn, tokenOut, amount, exactIn) returns amountOut\nuint256 amountOut = IEulerSwap(pool).computeQuote(\n    tokenIn,           // Input token address\n    tokenOut,          // Output token address\n    amountIn,          // Amount of input token\n    true               // Exact input (vs exact output)\n);\n\n// Apply slippage tolerance\nuint256 minAmountOut = amountOut * 995 / 1000; // 0.5% slippage\n\n// Transfer tokens to pool first (Uniswap V2 style)\nIERC20(tokenIn).transfer(pool, amountIn);\n\n// Execute swap - specify amounts OUT (Uniswap V2 interface)\n// swap(amount0Out, amount1Out, to, data)\nbool tokenOutIsToken0 = tokenOut == IEulerSwap(pool).token0();\nIEulerSwap(pool).swap(\n    tokenOutIsToken0 ? minAmountOut : 0,\n    tokenOutIsToken0 ? 0 : minAmountOut,\n    recipient,\n    \"\"\n);",
+    "language": "solidity",
+    "description": "query and execute atomically"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Swap Quotes from EulerSwap",
+    "type": "good",
+    "code": "// For exact output: \"I want exactly X tokens out\"\n\n// Get quote: how much input needed for desired output?\n// computeQuote(tokenIn, tokenOut, amount, exactIn)\nuint256 amountIn = IEulerSwap(pool).computeQuote(\n    tokenIn,            // Input token address\n    tokenOut,           // Output token address\n    desiredAmountOut,   // Exact amount you want to receive\n    false               // Exact output mode (false = exact output)\n);\n\n// Apply slippage tolerance (allow paying slightly more)\nuint256 maxAmountIn = amountIn * 1005 / 1000; // 0.5% slippage\n\n// Transfer input tokens first\nIERC20(tokenIn).transfer(pool, maxAmountIn);\n\n// Execute swap (Uniswap V2 style interface)\npool.swap(\n    tokenOutIsToken0 ? desiredAmountOut : 0,\n    tokenOutIsToken0 ? 0 : desiredAmountOut,\n    recipient,\n    \"\"\n);",
+    "language": "solidity",
+    "description": "exact output quote"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Swap Quotes from EulerSwap",
+    "type": "good",
+    "code": "import { EulerSwapPeriphery } from '@eulerxyz/euler-swap';\n\n// Periphery provides simpler interface with built-in protections\n\n// Quote exact input\nconst quoteExactIn = await periphery.quoteExactInput(\n  pool,\n  amountIn,\n  tokenIn === token0\n);\n\nconsole.log(`${amountIn} tokenIn -> ${quoteExactIn} tokenOut`);\n\n// Quote exact output  \nconst quoteExactOut = await periphery.quoteExactOutput(\n  pool,\n  amountOut,\n  tokenIn === token0\n);\n\nconsole.log(`${quoteExactOut} tokenIn needed for ${amountOut} tokenOut`);",
+    "language": "typescript",
+    "description": "using EulerSwapPeriphery"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Swap Quotes from EulerSwap",
+    "type": "good",
+    "code": "// computeQuote reverts if:\n// 1. Insufficient liquidity\n// 2. Pool is decommissioned\n// 3. Amount exceeds pool limits\n\nfunction safeQuote(\n    address pool,\n    address tokenIn,\n    address tokenOut,\n    uint256 amount,\n    bool exactIn\n) public view returns (uint256 quote, bool valid) {\n    try IEulerSwap(pool).computeQuote(tokenIn, tokenOut, amount, exactIn) \n        returns (uint256 result) \n    {\n        return (result, true);\n    } catch {\n        return (0, false);\n    }\n}\n\n// Check limits before quoting\n(uint256 limit0In, uint256 limit1In, uint256 limit0Out, uint256 limit1Out) = \n    IEulerSwap(pool).getLimits();\n\n// Ensure your swap is within limits\nrequire(amountIn <= (tokenInIsToken0 ? limit0In : limit1In), \"Exceeds input limit\");",
+    "language": "solidity",
+    "description": "checking quote validity"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Swap Quotes from EulerSwap",
+    "type": "good",
+    "code": "interface SwapRoute {\n  pool: Address;\n  amountOut: bigint;\n  priceImpact: number;\n}\n\nasync function findBestRoute(\n  pools: Address[],\n  amountIn: bigint,\n  tokenIn: Address\n): Promise<SwapRoute | null> {\n  const quotes = await Promise.all(\n    pools.map(async (pool) => {\n      try {\n        const token0 = await IEulerSwap(pool).token0();\n        const tokenInIsToken0 = tokenIn === token0;\n        \n        const [amountOut] = await IEulerSwap(pool).computeQuote(\n          amountIn,\n          true // exact input\n        );\n        \n        // Calculate price impact\n        const spotPrice = await getSpotPrice(pool);\n        const executionPrice = amountOut * 1e18 / amountIn;\n        const priceImpact = (spotPrice - executionPrice) / spotPrice;\n        \n        return { pool, amountOut, priceImpact };\n      } catch {\n        return null;\n      }\n    })\n  );\n  \n  // Filter failed quotes and sort by best output\n  return quotes\n    .filter((q): q is SwapRoute => q !== null)\n    .sort((a, b) => Number(b.amountOut - a.amountOut))[0];\n}",
+    "language": "typescript",
+    "description": "comparing across pools"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Creator Tools and Deployment Resources",
+    "type": "good",
+    "code": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.19;\n\nimport {Script} from \"forge-std/Script.sol\";\nimport {GenericFactory} from \"evk/GenericFactory/GenericFactory.sol\";\nimport {IEVault} from \"evk/EVault/IEVault.sol\";\n\ncontract DeployVault is Script {\n    // Mainnet addresses\n    address constant EVAULT_FACTORY = 0x29a56a1b8214D9Cf7c5561811750D5cBDb45CC8e;\n    address constant KINK_IRM_FACTORY = 0xcAe0A39B45Ee9C3213f64392FA6DF30CE034C9F9;\n    address constant ORACLE_ROUTER_FACTORY = 0x70B3f6F61b7Bf237DF04589DdAA842121072326A;\n    \n    function run() external {\n        uint256 deployerKey = vm.envUint(\"PRIVATE_KEY\");\n        vm.startBroadcast(deployerKey);\n        \n        // 1. Deploy IRM\n        address irm = IKinkIRMFactory(KINK_IRM_FACTORY).deploy(\n            0,           // baseRate\n            1.585e25,    // slope1 (~5% APY at kink)\n            13.16e27,    // slope2 (~300% at 100%)\n            0.9e9        // kink (90%)\n        );\n        \n        // 2. Deploy oracle router\n        address router = IEulerRouterFactory(ORACLE_ROUTER_FACTORY).deploy(\n            msg.sender   // governor\n        );\n        \n        // 3. Configure oracle adapters\n        IEulerRouter(router).govSetConfig(\n            asset,\n            unitOfAccount,\n            oracleAdapter\n        );\n        \n        // 4. Deploy vault\n        bytes memory trailingData = abi.encodePacked(\n            asset,\n            router,\n            unitOfAccount\n        );\n        address vault = GenericFactory(EVAULT_FACTORY).createProxy(\n            address(0),  // no salt\n            true,        // upgradeable\n            trailingData\n        );\n        \n        // 5. Configure vault\n        IEVault(vault).setInterestRateModel(irm);\n        IEVault(vault).setHookConfig(address(0), 0);\n        IEVault(vault).setCaps(1000000e18, 500000e18);\n        IEVault(vault).setInterestFee(0.1e4); // 10%\n        \n        // 6. Configure LTV for collaterals\n        IEVault(vault).setLTV(\n            collateralVault,\n            0.75e4,     // 75% borrow LTV\n            0.85e4,     // 85% liquidation LTV\n            0           // no ramp\n        );\n        \n        vm.stopBroadcast();\n        \n        console.log(\"Vault deployed:\", vault);\n    }\n}",
+    "language": "solidity",
+    "description": "deploying vault via script"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Creator Tools and Deployment Resources",
+    "type": "good",
+    "code": "// euler-interfaces provides contract addresses and ABIs\nimport addresses from '@eulerxyz/euler-interfaces/addresses/1/CoreAddresses.json';\nimport periphery from '@eulerxyz/euler-interfaces/addresses/1/PeripheryAddresses.json';\nimport evaultABI from '@eulerxyz/euler-interfaces/abis/EVault.json';\n\n// Core addresses\nconst evc = addresses.evc;\nconst evaultFactory = addresses.eVaultFactory;\nconst eulerEarnFactory = addresses.eulerEarnFactory;\n\n// Periphery addresses\nconst kinkIrmFactory = periphery.kinkIRMFactory;\nconst oracleRouterFactory = periphery.oracleRouterFactory;\nconst governedPerspective = periphery.governedPerspective;\n\n// Create contract instance\nconst vault = getContract({\n  address: vaultAddress,\n  abi: evaultABI,\n  client: walletClient,\n});",
+    "language": "typescript",
+    "description": "using EdgeFactory for ungoverned vaults"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Contract Addresses and ABIs",
+    "type": "bad",
+    "code": "// WRONG: Addresses may differ between chains and change over time\nconst EVC = \"0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383\";\nconst FACTORY = \"0x29a56a1b8214D9Cf7c5561811750D5cBDb45CC8e\";\n// What about Arbitrum? Base? Other chains?\n// What if addresses are updated?",
+    "language": "typescript",
+    "description": "hardcoding addresses"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Contract Addresses and ABIs",
+    "type": "good",
+    "code": "// Install: npm install @eulerxyz/euler-interfaces\n\n// Import chain-specific addresses\nimport coreMainnet from '@eulerxyz/euler-interfaces/addresses/1/CoreAddresses.json';\nimport peripheryMainnet from '@eulerxyz/euler-interfaces/addresses/1/PeripheryAddresses.json';\nimport lensMainnet from '@eulerxyz/euler-interfaces/addresses/1/LensAddresses.json';\n\n// For other chains, use their chain ID\nimport coreArbitrum from '@eulerxyz/euler-interfaces/addresses/42161/CoreAddresses.json';\nimport coreBase from '@eulerxyz/euler-interfaces/addresses/8453/CoreAddresses.json';\n\n// Access addresses\nconsole.log('EVC:', coreMainnet.evc);\nconsole.log('Factory:', coreMainnet.eVaultFactory);\nconsole.log('VaultLens:', lensMainnet.vaultLens);",
+    "language": "typescript",
+    "description": "using euler-interfaces package"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Contract Addresses and ABIs",
+    "type": "good",
+    "code": "// Dynamic address loading for multi-chain apps\nasync function getEulerAddresses(chainId: number) {\n  const core = await import(\n    `@eulerxyz/euler-interfaces/addresses/${chainId}/CoreAddresses.json`\n  );\n  const periphery = await import(\n    `@eulerxyz/euler-interfaces/addresses/${chainId}/PeripheryAddresses.json`\n  );\n  const lens = await import(\n    `@eulerxyz/euler-interfaces/addresses/${chainId}/LensAddresses.json`\n  );\n  \n  return { core, periphery, lens };\n}\n\n// Usage\nconst { core, periphery, lens } = await getEulerAddresses(1); // Mainnet\nconst { core: arbCore } = await getEulerAddresses(42161);     // Arbitrum",
+    "language": "typescript",
+    "description": "dynamic chain-based loading"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Contract Addresses and ABIs",
+    "type": "good",
+    "code": "import { createPublicClient, http, getContract } from 'viem';\nimport { mainnet } from 'viem/chains';\nimport core from '@eulerxyz/euler-interfaces/addresses/1/CoreAddresses.json';\nimport evcABI from '@eulerxyz/euler-interfaces/abis/EthereumVaultConnector.json';\nimport evaultABI from '@eulerxyz/euler-interfaces/abis/EVault.json';\n\nconst client = createPublicClient({\n  chain: mainnet,\n  transport: http()\n});\n\n// Create contract instances using imported addresses\nconst evc = getContract({\n  address: core.evc as `0x${string}`,\n  abi: evcABI,\n  client\n});\n\n// Check collaterals for an account\nconst collaterals = await evc.read.getCollaterals([accountAddress]);",
+    "language": "typescript",
+    "description": "using with viem"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Contract Addresses and ABIs",
+    "type": "good",
+    "code": "// In remappings.txt for Foundry\neuler-interfaces/=node_modules/@eulerxyz/euler-interfaces/\n\n// In Solidity\nimport {IEVault} from \"euler-interfaces/interfaces/IEVault.sol\";\nimport {IEVC} from \"euler-interfaces/interfaces/IEVC.sol\";",
+    "language": "solidity",
+    "description": "Solidity remapping"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Data Querying with Subgraphs",
+    "type": "bad",
+    "code": "// WRONG: Fetching all vault positions on-chain is expensive and slow\nconst allVaults = await factory.read.getAllProxies();\nfor (const vault of allVaults) {\n  const info = await vault.read.getVaultInfo(); // Many RPC calls!\n}",
+    "language": "typescript",
+    "description": "querying everything on-chain"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Data Querying with Subgraphs",
+    "type": "good",
+    "code": "// Subgraph endpoints (as of 2025)\nconst SUBGRAPH_URLS = {\n  1: 'https://api.studio.thegraph.com/query/[id]/euler-v2-mainnet/version/latest',\n  42161: 'https://api.studio.thegraph.com/query/[id]/euler-v2-arbitrum/version/latest',\n  8453: 'https://api.studio.thegraph.com/query/[id]/euler-v2-base/version/latest',\n};\n\n// Check docs.euler.finance for current endpoints",
+    "language": "typescript",
+    "description": "using Subgraph for aggregated data"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Data Querying with Subgraphs",
+    "type": "good",
+    "code": "# Get all vaults with their configuration\nquery GetVaults {\n  vaults(first: 100, orderBy: totalSupplyAssets, orderDirection: desc) {\n    id\n    address\n    asset {\n      address\n      symbol\n      decimals\n    }\n    totalSupplyAssets\n    totalSupplyShares\n    totalBorrowAssets\n    totalBorrowShares\n    interestRate\n    interestFee\n    oracle\n    unitOfAccount\n    governorAdmin\n    supplyCap\n    borrowCap\n    createdAt\n    lastInterestAccrual\n  }\n}",
+    "language": "graphql",
+    "description": "querying vault data"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Data Querying with Subgraphs",
+    "type": "good",
+    "code": "# Get all positions for an account\nquery GetAccountPositions($account: String!) {\n  account(id: $account) {\n    id\n    positions {\n      vault {\n        address\n        asset {\n          symbol\n        }\n      }\n      supplyShares\n      supplyAssets\n      borrowShares\n      borrowAssets\n      enabledAsCollateral\n    }\n    controllers {\n      vault {\n        address\n      }\n    }\n  }\n}",
+    "language": "graphql",
+    "description": "querying account positions"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Data Querying with Subgraphs",
+    "type": "good",
+    "code": "import { request, gql } from 'graphql-request';\n\nconst SUBGRAPH_URL = 'https://api.studio.thegraph.com/query/[id]/euler-v2-mainnet/version/latest';\n\n// Query vault information\nconst getVaultInfo = async (vaultAddress: string) => {\n  const query = gql`\n    query GetVault($id: ID!) {\n      vault(id: $id) {\n        id\n        address\n        asset {\n          address\n          symbol\n          decimals\n        }\n        totalSupplyAssets\n        totalBorrowAssets\n        interestRate\n        supplyCap\n        borrowCap\n        collaterals {\n          collateral {\n            address\n            asset {\n              symbol\n            }\n          }\n          borrowLTV\n          liquidationLTV\n        }\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { id: vaultAddress.toLowerCase() });\n};\n\n// Query top vaults by TVL\nconst getTopVaults = async (limit: number = 10) => {\n  const query = gql`\n    query GetTopVaults($first: Int!) {\n      vaults(first: $first, orderBy: totalSupplyAssets, orderDirection: desc) {\n        id\n        address\n        asset {\n          symbol\n        }\n        totalSupplyAssets\n        totalBorrowAssets\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { first: limit });\n};\n\n// Query user positions\nconst getUserPositions = async (account: string) => {\n  const query = gql`\n    query GetUserPositions($account: ID!) {\n      account(id: $account) {\n        positions(where: { supplyShares_gt: \"0\" }) {\n          vault {\n            address\n            asset {\n              symbol\n              decimals\n            }\n          }\n          supplyAssets\n          borrowAssets\n        }\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { account: account.toLowerCase() });\n};\n\n// Query historical APY\nconst getHistoricalAPY = async (vault: string, days: number = 30) => {\n  const since = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60);\n  \n  const query = gql`\n    query GetAPYHistory($vault: String!, $since: BigInt!) {\n      vaultSnapshots(\n        where: { vault: $vault, timestamp_gte: $since }\n        orderBy: timestamp\n        first: 1000\n      ) {\n        timestamp\n        interestRate\n        utilization\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { \n    vault: vault.toLowerCase(), \n    since: since.toString() \n  });\n};",
+    "language": "typescript",
+    "description": "querying interest rate history"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Data Querying with Subgraphs",
+    "type": "good",
+    "code": "# Get recent liquidations\nquery GetLiquidations($since: BigInt!) {\n  liquidations(\n    where: { timestamp_gte: $since }\n    orderBy: timestamp\n    orderDirection: desc\n    first: 100\n  ) {\n    id\n    timestamp\n    liquidator\n    violator\n    vault {\n      address\n      asset {\n        symbol\n      }\n    }\n    collateralVault {\n      address\n      asset {\n        symbol\n      }\n    }\n    repayAssets\n    yieldBalance\n  }\n}",
+    "language": "graphql",
+    "description": "querying liquidation events"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Borrow Assets from a Vault",
+    "type": "bad",
+    "code": "// This will revert - vault is not enabled as controller\nIEVault(vault).borrow(amount, receiver);\n// Error: E_ControllerDisabled",
+    "language": "solidity",
+    "description": "borrowing without enabling controller"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Borrow Assets from a Vault",
+    "type": "bad",
+    "code": "// Enable controller but forget collateral\nIEVC(evc).enableController(account, vault);\nIEVault(vault).borrow(amount, receiver);\n// Error: E_AccountLiquidity - no collateral to back the loan",
+    "language": "solidity",
+    "description": "borrowing without collateral"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Borrow Assets from a Vault",
+    "type": "good",
+    "code": "// Step 1: Deposit collateral into a collateral vault\nIERC20(collateralAsset).approve(collateralVault, collateralAmount);\nIEVault(collateralVault).deposit(collateralAmount, account);\n\n// Step 2: Enable the collateral vault for your account\nIEVC(evc).enableCollateral(account, collateralVault);\n\n// Step 3: Enable the borrow vault as your controller\n// This gives the vault authority to check your account status\nIEVC(evc).enableController(account, borrowVault);\n\n// Step 4: Borrow assets\n// - amount: how much to borrow\n// - receiver: who receives the borrowed assets\nuint256 borrowed = IEVault(borrowVault).borrow(amount, receiver);",
+    "language": "solidity",
+    "description": "full borrow flow"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Borrow Assets from a Vault",
+    "type": "good",
+    "code": "// Batch all operations for gas efficiency and atomicity\nconst batchItems = [\n  // Deposit collateral\n  {\n    targetContract: collateralVault,\n    onBehalfOfAccount: account,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: eVaultABI,\n      functionName: 'deposit',\n      args: [collateralAmount, account],\n    }),\n  },\n  // Enable collateral (EVC call - onBehalfOfAccount must be address(0))\n  {\n    targetContract: evcAddress,\n    onBehalfOfAccount: '0x0000000000000000000000000000000000000000',\n    value: 0n,\n    data: encodeFunctionData({\n      abi: evcABI,\n      functionName: 'enableCollateral',\n      args: [account, collateralVault],\n    }),\n  },\n  // Enable controller (EVC call - onBehalfOfAccount must be address(0))\n  {\n    targetContract: evcAddress,\n    onBehalfOfAccount: '0x0000000000000000000000000000000000000000',\n    value: 0n,\n    data: encodeFunctionData({\n      abi: evcABI,\n      functionName: 'enableController',\n      args: [account, borrowVault],\n    }),\n  },\n  // Borrow\n  {\n    targetContract: borrowVault,\n    onBehalfOfAccount: account,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: eVaultABI,\n      functionName: 'borrow',\n      args: [borrowAmount, account],\n    }),\n  },\n];\n\nawait evc.batch(batchItems);",
+    "language": "typescript",
+    "description": "batched borrow via EVC for atomicity"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Create a New Vault/Market",
+    "type": "bad",
+    "code": "// Deploying without IRM or oracle makes vault unusable for borrowing\naddress vault = factory.createProxy(address(0), true, \"\");\n// This vault cannot price collateral or calculate interest",
+    "language": "solidity",
+    "description": "deploying vault without proper configuration"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Create a New Vault/Market",
+    "type": "good",
+    "code": "import {GenericFactory} from \"evk/GenericFactory/GenericFactory.sol\";\nimport {IEVault} from \"evk/EVault/IEVault.sol\";\n\n// Step 1: Deploy or select an Interest Rate Model\naddress irm = irmFactory.deploy(\n    baseRate,    // e.g., 0 for 0% base rate\n    slope1,      // e.g., 4e27 for 4% at kink\n    slope2,      // e.g., 300e27 for 300% max\n    kink         // e.g., 0.9e18 for 90% utilization\n);\n\n// Step 2: Deploy or configure an oracle\naddress oracle = eulerRouter; // EulerRouter configured for this asset\n\n// Step 3: Prepare vault initialization data (tightly packed, 60 bytes)\n// Format: 20 bytes asset + 20 bytes oracle + 20 bytes unitOfAccount\nbytes memory initData = abi.encodePacked(\n    asset,              // Underlying asset address (20 bytes)\n    oracle,             // Price oracle address (20 bytes)\n    unitOfAccount       // Unit of account (20 bytes, e.g., USD reference or address(0) for ETH)\n);\n\n// Step 4: Create the vault via factory\naddress vault = GenericFactory(factory).createProxy(\n    address(0),  // No specific salt (use msg.sender + nonce)\n    true,        // Upgradeable\n    initData\n);",
+    "language": "solidity",
+    "description": "full vault deployment flow"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Create a New Vault/Market",
+    "type": "good",
+    "code": "IEVault vault = IEVault(vaultAddress);\n\n// Set interest rate model\nvault.setInterestRateModel(irm);\n\n// Configure LTV for accepted collaterals\n// borrowLTV: max LTV for new borrows\n// liquidationLTV: LTV at which liquidation can occur\nvault.setLTV(\n    collateralVault,     // Address of collateral vault\n    0.75e4,              // 75% borrow LTV\n    0.85e4,              // 85% liquidation LTV\n    0                    // No ramp (instant)\n);\n\n// Set caps to limit exposure (uint16 AmountCap encoding)\n// AmountCap format: 10 bits mantissa + 6 bits exponent\n// Use encodeAmountCap helper or pre-calculated values\n// Example: supplyCap=7059 ≈ 11e18, borrowCap=38418 ≈ 5e18\nvault.setCaps(\n    7059,   // ~11e18 supply cap (see AmountCap encoding docs)\n    38418   // ~5e18 borrow cap\n);\n// NOTE: Use VaultLens to decode caps to human-readable amounts\n\n// Set interest fee (protocol revenue)\nvault.setInterestFee(0.1e4); // 10% of interest goes to fee receiver\n\n// Set fee receiver\nvault.setFeeReceiver(feeRecipient);\n\n// Configure hooks if needed\nvault.setHookConfig(hookTarget, hookedOps);",
+    "language": "solidity",
+    "description": "configuring vault after deployment"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Create a New Vault/Market",
+    "type": "good",
+    "code": "# Clone euler-vault-kit repository\ngit clone https://github.com/euler-xyz/euler-vault-kit\ncd euler-vault-kit\n\n# Configure deployment parameters in script\n# See script/deploy.s.sol for full example\n\n# Deploy with Foundry\nforge script script/Deploy.s.sol --rpc-url $RPC_URL --broadcast",
+    "language": "bash",
+    "description": "using EVK deployment scripts"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deposit Assets into a Vault",
+    "type": "bad",
+    "code": "// This will revert - vault cannot pull tokens without approval\nIEVault(vault).deposit(amount, receiver);",
+    "language": "solidity",
+    "description": "forgetting to approve tokens first"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deposit Assets into a Vault",
+    "type": "good",
+    "code": "// Step 1: Approve the vault to spend your tokens\nIERC20(asset).approve(vault, amount);\n\n// Step 2: Deposit assets and receive vault shares\n// - amount: the amount of underlying assets to deposit\n// - receiver: address that will receive the vault shares\nuint256 shares = IEVault(vault).deposit(amount, receiver);",
+    "language": "solidity",
+    "description": "approve then deposit"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deposit Assets into a Vault",
+    "type": "good",
+    "code": "import { signPermit2 } from '@eulerxyz/euler-sdk';\n\n// Euler vaults support Permit2 for single-transaction deposits\nconst permit2Signature = await signPermit2({\n  token: assetAddress,\n  amount: depositAmount,\n  spender: vaultAddress,\n  deadline: Math.floor(Date.now() / 1000) + 3600,\n});\n\n// Batch via EVC for atomic approval + deposit\nconst batchItems = [\n  {\n    targetContract: permit2Address,\n    onBehalfOfAccount: userAddress,\n    value: 0n,\n    data: encodePermit2Transfer(permit2Signature),\n  },\n  {\n    targetContract: vaultAddress,\n    onBehalfOfAccount: userAddress,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: eVaultABI,\n      functionName: 'deposit',\n      args: [depositAmount, userAddress],\n    }),\n  },\n];\n\nawait evc.batch(batchItems);",
+    "language": "typescript",
+    "description": "using Permit2 for gasless approvals"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deposit Assets into a Vault",
+    "type": "good",
+    "code": "// Enable this vault as collateral for your account\nIEVC(evc).enableCollateral(account, vault);",
+    "language": "solidity",
+    "description": "using mint instead of deposit"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Vault APY and Interest Rates",
+    "type": "bad",
+    "code": "// The interestRate() returns the per-second interest rate (SPY)\n// NOT the APY - this value will be extremely small and misleading\nuint256 rate = IEVault(vault).interestRate();\n// rate = 1000000000 (this is NOT 100% APY!)",
+    "language": "solidity",
+    "description": "reading raw interest rate without conversion"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Vault APY and Interest Rates",
+    "type": "good",
+    "code": "import { VaultLens } from '@eulerxyz/evk-periphery';\n\n// VaultLens provides pre-calculated APY values\nconst vaultInfo = await vaultLens.getVaultInfoDynamic(vaultAddress);\n\n// Access the IRM info which contains calculated APYs\nconst irmInfo = vaultInfo.irmInfo;\nconst interestRateInfo = irmInfo.interestRateInfo[0];\n\n// borrowAPY - what borrowers pay (already converted to annual %)\nconst borrowAPY = interestRateInfo.borrowAPY;\n\n// supplyAPY - what suppliers earn (accounts for utilization and fees)\nconst supplyAPY = interestRateInfo.supplyAPY;\n\n// borrowSPY - raw per-second rate if you need it\nconst borrowSPY = interestRateInfo.borrowSPY;\n\nconsole.log(`Supply APY: ${supplyAPY / 1e25}%`);\nconsole.log(`Borrow APY: ${borrowAPY / 1e25}%`);",
+    "language": "typescript",
+    "description": "using VaultLens for complete APY data"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Get Vault APY and Interest Rates",
+    "type": "good",
+    "code": "// Constants for APY calculation\nuint256 constant SECONDS_PER_YEAR = 365.2425 days;\nuint256 constant ONE = 1e27; // RAY precision\n\n// Convert per-second rate to APY using compound interest formula\n// APY = (1 + SPY)^SECONDS_PER_YEAR - 1\nfunction calculateAPY(uint256 borrowSPY) public pure returns (uint256) {\n    // Use RPow for precise exponentiation\n    uint256 compounded = RPow.rpow(ONE + borrowSPY, SECONDS_PER_YEAR, ONE);\n    return compounded - ONE;\n}\n\n// For supply APY, account for utilization and interest fee\nfunction calculateSupplyAPY(\n    uint256 borrowSPY,\n    uint256 totalCash,\n    uint256 totalBorrows,\n    uint256 interestFee\n) public pure returns (uint256) {\n    uint256 borrowAPY = calculateAPY(borrowSPY);\n    uint256 totalAssets = totalCash + totalBorrows;\n    if (totalAssets == 0) return 0;\n    \n    uint256 utilization = (totalBorrows * ONE) / totalAssets;\n    uint256 feeAdjusted = borrowAPY * (1e4 - interestFee) / 1e4;\n    return (feeAdjusted * utilization) / ONE;\n}",
+    "language": "solidity",
+    "description": "calculating APY from SPY manually in Solidity"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Repay Borrowed Debt",
+    "type": "bad",
+    "code": "// Interest has accrued - this won't fully repay the debt\nuint256 originalBorrow = 1000e18;\nIERC20(asset).approve(vault, originalBorrow);\nIEVault(vault).repay(originalBorrow, account);\n// Still has dust debt remaining!",
+    "language": "solidity",
+    "description": "repaying exact original borrow amount"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Repay Borrowed Debt",
+    "type": "good",
+    "code": "// Get the current debt amount (includes accrued interest)\nuint256 currentDebt = IEVault(vault).debtOf(account);\n\n// Add a small buffer for interest accruing during tx\nuint256 repayAmount = currentDebt + (currentDebt / 1000); // 0.1% buffer\n\nIERC20(asset).approve(vault, repayAmount);\n\n// Repay - excess will be refunded or you can use type(uint256).max\nuint256 actualRepaid = IEVault(vault).repay(currentDebt, account);",
+    "language": "solidity",
+    "description": "query current debt and repay with buffer"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Repay Borrowed Debt",
+    "type": "good",
+    "code": "// Use type(uint256).max to repay entire debt\n// This handles interest accrual automatically\nuint256 maxDebt = IEVault(vault).debtOf(account);\n\n// Approve enough to cover debt plus any interest during tx\nIERC20(asset).approve(vault, type(uint256).max);\n\n// This will repay exactly the current debt amount\nIEVault(vault).repay(type(uint256).max, account);\n\n// After full repayment, disable controller if not needed\n// Only the controller vault can disable itself\n// This happens automatically if debt reaches zero",
+    "language": "solidity",
+    "description": "repay max to clear all debt"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Repay Borrowed Debt",
+    "type": "good",
+    "code": "// Calculate how much to repay to reach target health factor\nconst currentDebt = await vault.debtOf(account);\nconst currentHealth = await accountLens.getAccountHealth(account);\n\n// Repay enough to reach 1.5 health factor\nconst targetHealth = 1.5e18;\nconst requiredRepay = calculateRepayForHealth(\n  currentDebt,\n  currentHealth,\n  targetHealth\n);\n\nawait asset.approve(vault, requiredRepay);\nawait vault.repay(requiredRepay, account);",
+    "language": "typescript",
+    "description": "partial repay to improve health factor"
+  }
+]

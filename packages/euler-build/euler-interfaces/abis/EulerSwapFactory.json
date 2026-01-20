@@ -1,0 +1,414 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "evc",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "eulerSwapImpl_",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "EVC",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "computePoolAddress",
+    "inputs": [
+      {
+        "name": "sParams",
+        "type": "tuple",
+        "internalType": "struct IEulerSwap.StaticParams",
+        "components": [
+          {
+            "name": "supplyVault0",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "supplyVault1",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowVault0",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowVault1",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "eulerAccount",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "feeRecipient",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "salt",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "creationCode",
+    "inputs": [
+      {
+        "name": "sParams",
+        "type": "tuple",
+        "internalType": "struct IEulerSwap.StaticParams",
+        "components": [
+          {
+            "name": "supplyVault0",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "supplyVault1",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowVault0",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowVault1",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "eulerAccount",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "feeRecipient",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "deployPool",
+    "inputs": [
+      {
+        "name": "sParams",
+        "type": "tuple",
+        "internalType": "struct IEulerSwap.StaticParams",
+        "components": [
+          {
+            "name": "supplyVault0",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "supplyVault1",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowVault0",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowVault1",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "eulerAccount",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "feeRecipient",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "dParams",
+        "type": "tuple",
+        "internalType": "struct IEulerSwap.DynamicParams",
+        "components": [
+          {
+            "name": "equilibriumReserve0",
+            "type": "uint112",
+            "internalType": "uint112"
+          },
+          {
+            "name": "equilibriumReserve1",
+            "type": "uint112",
+            "internalType": "uint112"
+          },
+          {
+            "name": "minReserve0",
+            "type": "uint112",
+            "internalType": "uint112"
+          },
+          {
+            "name": "minReserve1",
+            "type": "uint112",
+            "internalType": "uint112"
+          },
+          {
+            "name": "priceX",
+            "type": "uint80",
+            "internalType": "uint80"
+          },
+          {
+            "name": "priceY",
+            "type": "uint80",
+            "internalType": "uint80"
+          },
+          {
+            "name": "concentrationX",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "concentrationY",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "fee0",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "fee1",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "expiration",
+            "type": "uint40",
+            "internalType": "uint40"
+          },
+          {
+            "name": "swapHookedOperations",
+            "type": "uint8",
+            "internalType": "uint8"
+          },
+          {
+            "name": "swapHook",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "initialState",
+        "type": "tuple",
+        "internalType": "struct IEulerSwap.InitialState",
+        "components": [
+          {
+            "name": "reserve0",
+            "type": "uint112",
+            "internalType": "uint112"
+          },
+          {
+            "name": "reserve1",
+            "type": "uint112",
+            "internalType": "uint112"
+          }
+        ]
+      },
+      {
+        "name": "salt",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "deployedPools",
+    "inputs": [
+      {
+        "name": "pool",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "eulerSwapImpl",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "PoolDeployed",
+    "inputs": [
+      {
+        "name": "asset0",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "asset1",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "eulerAccount",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "pool",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "sParams",
+        "type": "tuple",
+        "indexed": false,
+        "internalType": "struct IEulerSwap.StaticParams",
+        "components": [
+          {
+            "name": "supplyVault0",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "supplyVault1",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowVault0",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "borrowVault1",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "eulerAccount",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "feeRecipient",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "ControllerDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EVC_InvalidAddress",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "E_DeploymentFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotAuthorized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OperatorNotInstalled",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "Unauthorized",
+    "inputs": []
+  }
+]
