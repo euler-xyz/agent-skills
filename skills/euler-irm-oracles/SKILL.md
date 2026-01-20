@@ -1,0 +1,74 @@
+---
+name: euler-irm-oracles
+description: Oracle and Interest Rate Model guide for Euler Finance V2. This skill should be used when deploying oracle adapters, configuring price resolution, querying prices, or understanding IRM types. Triggers on tasks involving Chainlink, Pyth, TWAP, price feeds, Linear Kink IRM, Adaptive Curve IRM, or interest rate configuration.
+license: MIT
+metadata:
+  author: Euler Labs
+  version: "1.0.0"
+---
+
+# Euler IRM & Oracles Agent Skill
+
+Oracle integration and Interest Rate Model guide for Euler Finance V2 protocol. Covers oracle adapters, price routing, and IRM configuration.
+
+## When to Apply
+
+Reference these guidelines when:
+- Deploying oracle adapters (Chainlink, Pyth, TWAP, Chronicle, RedStone)
+- Configuring EulerRouter for price resolution
+- Setting up cross-currency pricing with CrossAdapter
+- Querying asset prices from oracles
+- Understanding Interest Rate Model types and selection
+- Configuring IRM parameters for vaults
+
+## Rule Categories
+
+| Rule | Impact | Description |
+|------|--------|-------------|
+| `oracle-deploy` | HIGH | Deploy oracle adapters for various price sources |
+| `oracle-configure-router` | HIGH | Configure EulerRouter for price resolution |
+| `oracle-get-price` | HIGH | Query asset prices from oracles |
+| `irm-models` | HIGH | Understand and configure Interest Rate Models |
+
+## Quick Reference
+
+### Oracle Adapters
+
+- **ChainlinkOracle** - For major pairs (ETH/USD, BTC/USD)
+- **PythOracle** - Pull-based, requires price updates before use
+- **UniswapV3Oracle** - TWAP for manipulation resistance
+- **ChronicleOracle** - MakerDAO ecosystem (requires whitelisting)
+- **RedStoneOracle** - Gas-optimized calldata-based pricing
+- **FixedRateOracle** - For stablecoins (1:1 rates)
+- **CrossAdapter** - Chain through intermediate assets
+- **LidoOracle / RateProviderOracle** - For LSTs
+
+### Interest Rate Models
+
+- **Linear Kink IRM** - Standard model with utilization-based rates
+- **Adaptive Curve IRM** - Self-adjusting based on market conditions
+- **Fixed Cyclical Binary** - For binary rate transitions
+- **Base Premium IRM** - Uses underlying vault's rate as base
+
+## Companion Skills
+
+- `euler-finance` - Core vault operations, EVC, risk management
+- `euler-earn` - Yield aggregation vaults
+- `euler-swap` - AMM integration
+- `euler-advanced` - Hooks, flash loans, fee flow
+- `euler-lens-data` - Lens contracts and data querying
+
+## How to Use
+
+Read individual rule files for detailed explanations and code examples:
+
+```
+rules/oracle-deploy.md
+rules/oracle-configure-router.md
+rules/oracle-get-price.md
+rules/irm-models.md
+```
+
+## Full Compiled Document
+
+For the complete guide with all rules expanded: `AGENTS.md`

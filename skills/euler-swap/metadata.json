@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "organization": "Euler Labs",
+  "date": "January 2026",
+  "abstract": "EulerSwap AMM integration guide for Euler Finance. Covers deploying swap pools backed by Euler lending vaults, getting quotes, checking liquidity limits, and executing swaps. Enables up to 40x deeper liquidity than traditional AMMs.",
+  "references": [
+    "https://docs.euler.finance",
+    "https://github.com/euler-xyz/euler-swap"
+  ]
+}

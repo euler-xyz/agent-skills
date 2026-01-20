@@ -8,9 +8,37 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-// Navigate from packages/euler-build/src to skills/euler-finance
-export const SKILL_DIR = join(__dirname, '..', '..', '..', 'skills', 'euler-finance')
+// Base skills directory
+export const SKILLS_BASE_DIR = join(__dirname, '..', '..', '..', 'skills')
+
+// All skill directories to process
+export const SKILL_NAMES = [
+  'euler-finance',
+  'euler-irm-oracles',
+  'euler-swap',
+  'euler-earn',
+  'euler-advanced',
+  'euler-lens-data',
+] as const
+
+export type SkillName = (typeof SKILL_NAMES)[number]
+
+// Get paths for a specific skill
+export function getSkillPaths(skillName: SkillName) {
+  const skillDir = join(SKILLS_BASE_DIR, skillName)
+  return {
+    skillDir,
+    rulesDir: join(skillDir, 'rules'),
+    metadataFile: join(skillDir, 'metadata.json'),
+    outputFile: join(skillDir, 'AGENTS.md'),
+  }
+}
+
+// Legacy exports for backward compatibility (defaults to euler-finance)
+export const SKILL_DIR = join(SKILLS_BASE_DIR, 'euler-finance')
 export const RULES_DIR = join(SKILL_DIR, 'rules')
 export const METADATA_FILE = join(SKILL_DIR, 'metadata.json')
 export const OUTPUT_FILE = join(SKILL_DIR, 'AGENTS.md')
+
+// Test cases output (combined from all skills)
 export const TEST_CASES_FILE = join(__dirname, '..', 'test-cases.json')

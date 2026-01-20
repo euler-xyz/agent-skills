@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "organization": "Euler Labs",
+  "date": "January 2026",
+  "abstract": "Advanced features guide for Euler Finance V2 protocol. Covers vault hooks for custom logic, flash loans and debt transfer, fee flow controller mechanics, and EUL reward token distribution. For power users building sophisticated integrations.",
+  "references": [
+    "https://docs.euler.finance",
+    "https://github.com/euler-xyz/euler-vault-kit",
+    "https://github.com/euler-xyz/evk-periphery"
+  ]
+}

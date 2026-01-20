@@ -1,6 +1,6 @@
 ---
 name: euler-finance
-description: Comprehensive guide for interacting with Euler Finance V2 protocol. This skill should be used when building DeFi integrations, managing lending positions, deploying vaults/oracles, or automating yield strategies on Euler. Triggers on tasks involving lending, borrowing, collateral, liquidation, EVC, EVK, EulerEarn, EulerSwap, or Euler-specific operations.
+description: Core guide for interacting with Euler Finance V2 protocol. This skill should be used when building DeFi integrations, managing lending positions, or understanding Euler architecture. Triggers on tasks involving lending, borrowing, collateral, liquidation, EVC, EVK, or core Euler operations. For specialized topics, see companion skills.
 license: MIT
 metadata:
   author: Euler Labs
@@ -9,7 +9,16 @@ metadata:
 
 # Euler Finance Agent Skill
 
-Comprehensive guide for interacting with Euler Finance V2 protocol. Contains rules across 11 categories covering vault operations, EVC orchestration, risk management, oracle integration, architecture concepts, interest rate models, advanced features, security, and developer tools.
+Core guide for interacting with Euler Finance V2 protocol. Contains rules across 5 categories covering vault operations, EVC orchestration, risk management, architecture concepts, and security.
+
+## Companion Skills
+
+For specialized topics, use these companion skills:
+- **euler-irm-oracles** - Oracle adapters, EulerRouter, price resolution, Interest Rate Models
+- **euler-swap** - EulerSwap AMM pools, quotes, liquidity
+- **euler-earn** - EulerEarn yield aggregation, strategies
+- **euler-advanced** - Hooks, flash loans, fee flow, rewards
+- **euler-lens-data** - Lens contracts, subgraphs, contract interfaces, developer tools
 
 ## When to Apply
 
@@ -17,13 +26,8 @@ Reference these guidelines when:
 - Depositing, borrowing, or managing positions on Euler vaults
 - Batching operations via the Ethereum Vault Connector (EVC)
 - Monitoring health factors and liquidation risk
-- Deploying or configuring price oracles
 - Understanding Euler architecture (vault types, market design)
-- Configuring Interest Rate Models
-- Implementing hooks and custom vault logic
-- Using creator tools and development resources
-- Creating or managing EulerEarn yield aggregation vaults
-- Integrating with EulerSwap for token swaps
+- Security practices and audit information
 
 ## Rule Categories by Priority
 
@@ -32,14 +36,8 @@ Reference these guidelines when:
 | 1 | Vault Operations | CRITICAL | `vault-` | Get APY, deposit, borrow, create market |
 | 2 | EVC Operations | CRITICAL | `evc-` | Batch calls, sub-accounts, operators |
 | 3 | Risk Management | HIGH | `risk-` | Check health, liquidation, curators |
-| 4 | Oracle Integration | HIGH | `oracle-` | Deploy oracle, configure router, get price |
-| 5 | Architecture | HIGH | `arch-` | Market design, vault types |
-| 6 | Interest Rate Models | HIGH | `irm-` | IRM types, configuration |
-| 7 | Advanced Features | MEDIUM | `adv-` | Hooks, fee flow, rewards |
-| 8 | Security | CRITICAL | `sec-` | Audits, best practices |
-| 9 | Developer Tools | MEDIUM | `tools-` | Addresses, ABIs, subgraphs |
-| 10 | EulerEarn | MEDIUM | `earn-` | Create vault, manage strategies |
-| 11 | EulerSwap | MEDIUM | `swap-` | Quote and execute swaps |
+| 4 | Architecture | HIGH | `arch-` | Market design, vault types |
+| 5 | Security | CRITICAL | `sec-` | Audits, best practices |
 
 ## Quick Reference
 
@@ -65,49 +63,14 @@ Reference these guidelines when:
 - `risk-monitor-position` - How to monitor position health
 - `risk-curators` - Understanding risk curator roles
 
-### 4. Oracle Integration (HIGH)
-
-- `oracle-deploy` - How to deploy an oracle adapter
-- `oracle-configure-router` - How to configure EulerRouter
-- `oracle-get-price` - How to get asset prices
-
-### 5. Architecture (HIGH)
+### 4. Architecture (HIGH)
 
 - `arch-market-design` - Understanding Euler market design
 - `arch-vault-types` - Core, Edge, and Escrow vault types
 
-### 6. Interest Rate Models (HIGH)
-
-- `irm-models` - Available IRM types and configuration
-
-### 7. Advanced Features (MEDIUM)
-
-- `adv-hooks` - Vault hooks and use cases
-- `adv-fee-flow` - Fee flow controller mechanics
-- `adv-rewards-eul` - EUL reward token distribution
-- `adv-flashloan-pulldebt` - Flash loans and debt transfer operations
-
-### 8. Security (CRITICAL)
+### 5. Security (CRITICAL)
 
 - `sec-audits` - Security practices and audit information
-
-### 9. Developer Tools (MEDIUM)
-
-- `tools-creator` - Creator tools and deployment resources
-- `tools-interfaces` - Contract addresses and ABIs
-- `tools-lens` - Lens contracts for data queries
-- `tools-subgraphs` - Data querying with subgraphs
-
-### 10. EulerEarn (MEDIUM)
-
-- `earn-create-vault` - How to create an EulerEarn vault
-- `earn-manage-strategies` - How to manage yield strategies
-
-### 11. EulerSwap (MEDIUM)
-
-- `swap-quote` - How to get swap quotes
-- `swap-execute` - How to execute swaps
-- `swap-liquidity` - How to check liquidity limits
 
 ## Core Protocol Components
 
@@ -125,12 +88,6 @@ Credit vaults extending ERC-4626 with borrowing:
 - Collateral and controller management
 - LTV ratios (borrow LTV vs liquidation LTV)
 
-### Price Oracles
-Modular oracle adapters implementing IPriceOracle:
-- Chainlink, Pyth, Chronicle adapters
-- Uniswap V3 TWAP oracles
-- EulerRouter for price resolution
-
 ## How to Use
 
 Read individual rule files for detailed explanations and code examples:
@@ -138,7 +95,7 @@ Read individual rule files for detailed explanations and code examples:
 ```
 rules/vault-get-apy.md
 rules/evc-batch.md
-rules/oracle-deploy.md
+rules/risk-check-health.md
 ```
 
 Each rule file contains:

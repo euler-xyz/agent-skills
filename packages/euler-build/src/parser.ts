@@ -13,8 +13,10 @@ export interface RuleFile {
 
 /**
  * Parse a rule markdown file into a Rule object
+ * @param filePath - Path to the rule markdown file
+ * @param skillName - Optional skill name to determine section numbering strategy
  */
-export async function parseRuleFile(filePath: string): Promise<RuleFile> {
+export async function parseRuleFile(filePath: string, skillName?: string): Promise<RuleFile> {
   const content = await readFile(filePath, 'utf-8')
 
   // Extract frontmatter if present
@@ -188,22 +190,38 @@ export async function parseRuleFile(filePath: string): Promise<RuleFile> {
 
   // Infer section from filename
   const filename = filePath.split('/').pop() || ''
-  const sectionMap: Record<string, number> = {
-    vault: 1,
-    evc: 2,
-    risk: 3,
-    oracle: 4,
-    arch: 5,
-    irm: 6,
-    adv: 7,
-    sec: 8,
-    tools: 9,
-    earn: 10,
-    swap: 11,
+  const area = filename.split('-')[0]
+  
+  // Section mappings per skill
+  const sectionMaps: Record<string, Record<string, number>> = {
+    'euler-finance': {
+      vault: 1,
+      evc: 2,
+      risk: 3,
+      arch: 4,
+      sec: 5,
+    },
+    'euler-irm-oracles': {
+      oracle: 1,
+      irm: 2,
+    },
+    'euler-lens-data': {
+      tools: 1,
+    },
   }
 
-  const area = filename.split('-')[0]
-  const section = frontmatter.section ? parseInt(frontmatter.section) : sectionMap[area] || 0
+  let section: number
+  
+  if (frontmatter.section) {
+    // Frontmatter override takes priority
+    section = parseInt(frontmatter.section)
+  } else if (skillName && sectionMaps[skillName]) {
+    // Use skill-specific section mapping
+    section = sectionMaps[skillName][area] || 1
+  } else {
+    // Default: all rules go into section 1
+    section = 1
+  }
 
   const rule: Rule = {
     id: '', // Will be assigned by build script

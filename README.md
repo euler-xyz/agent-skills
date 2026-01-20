@@ -6,37 +6,62 @@ Skills follow the [Agent Skills format](https://agentskills.io/home).
 
 ## Available Skills
 
-### euler-finance
+### euler-finance (Core)
 
-Comprehensive guide for interacting with Euler Finance V2 protocol. Contains 30+ rules across 11 categories covering vault operations, EVC orchestration, risk management, oracle integration, yield aggregation, and AMM swaps.
+Core guide for Euler Finance V2 protocol. Covers vault operations, EVC orchestration, risk management, architecture, and security.
 
-**Use when:**
+**Use when:** Depositing, borrowing, managing positions, batching with EVC, monitoring health factors, understanding architecture.
 
-- Depositing, borrowing, or managing positions on Euler vaults
-- Batching operations via the Ethereum Vault Connector (EVC)
-- Monitoring health factors and liquidation risk
-- Deploying or configuring price oracles
-- Creating or managing EulerEarn yield aggregation vaults
-- Integrating with EulerSwap for token swaps
+**Categories:** Vault Operations, EVC Operations, Risk Management, Architecture, Security
 
-**Categories covered:**
+### euler-irm-oracles
 
-- Vault Operations (Critical) - deposit, borrow, repay, get APY
-- EVC Operations (Critical) - batch calls, sub-accounts, operators
-- Risk Management (High) - health checks, liquidation, monitoring
-- Oracle Integration (High) - adapters, routing, price feeds
-- Architecture (High) - market design, vault types
-- Interest Rate Models (High) - Linear Kink, Adaptive Curve
-- Advanced Features (Medium) - hooks, fee flow, EUL rewards
-- Security (Critical) - audits, best practices
-- Developer Tools (Medium) - addresses, ABIs, subgraphs
-- EulerEarn (Medium) - yield aggregation vaults
-- EulerSwap (Medium) - AMM integration
+Oracle and Interest Rate Model guide. Covers deploying oracle adapters (Chainlink, Pyth, TWAP, etc.), configuring EulerRouter, and IRM types.
+
+**Use when:** Deploying oracle adapters, configuring price feeds, understanding IRM types (Linear Kink, Adaptive Curve).
+
+### euler-swap
+
+EulerSwap AMM integration guide. Covers pool deployment, quotes, liquidity limits, and swap execution.
+
+**Use when:** Deploying EulerSwap pools, getting swap quotes, executing swaps, managing LP positions.
+
+### euler-earn
+
+EulerEarn yield aggregation guide. Covers vault creation, strategy management, roles, and PublicAllocator.
+
+**Use when:** Creating yield aggregation vaults, managing strategies, configuring roles, using PublicAllocator.
+
+### euler-advanced
+
+Advanced features guide. Covers hooks, flash loans, debt transfer, fee flow, and EUL rewards.
+
+**Use when:** Implementing vault hooks, using flash loans, understanding fee flow, working with EUL rewards.
+
+### euler-lens-data
+
+Developer tools and data access guide. Covers Lens contracts, subgraphs, contract interfaces, and deployment tools.
+
+**Use when:** Querying vault data, fetching historical data, looking up addresses/ABIs, using Euler Creator.
 
 ## Installation
 
+Install all skills:
+
 ```bash
-npx add-skill euler-xyz/agent-skills --skill euler-finance
+npx add-skill euler-xyz/agent-skills
+```
+
+Install specific skills:
+
+```bash
+npx add-skill euler-xyz/agent-skills --skill euler-finance --skill euler-irm-oracles
+```
+
+List available skills:
+
+```bash
+npx add-skill euler-xyz/agent-skills --list
 ```
 
 Or clone the repository directly:
@@ -67,11 +92,15 @@ Help me batch multiple operations with EVC
 Deploy a Chainlink oracle adapter
 ```
 
+```
+Create an EulerEarn yield aggregation vault
+```
+
 ## Skill Structure
 
 Each skill contains:
 
-- `SKILL.md` - Quick reference with rule IDs and categories
+- `SKILL.md` - Quick reference with rule IDs, categories, and companion skill links
 - `AGENTS.md` - Compiled full document for AI agent context
 - `rules/` - Individual rule files with detailed guidance
 - `metadata.json` - Version and metadata
@@ -92,8 +121,14 @@ The repository includes build tooling for compiling skills:
 ```bash
 cd packages/euler-build
 pnpm install
-pnpm build        # Compile AGENTS.md and extract test cases
-pnpm validate     # Validate rule file structure
+pnpm build        # Compile AGENTS.md and extract test cases for all skills
+pnpm validate     # Validate rule file structure for all skills
+```
+
+Build a specific skill:
+
+```bash
+pnpm build-agents -- --skill=euler-finance
 ```
 
 ## References

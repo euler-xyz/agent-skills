@@ -44,6 +44,7 @@ export interface GuidelinesDocument {
 }
 
 export interface TestCase {
+  skill: string // Which skill this test case belongs to
   ruleId: string
   ruleTitle: string
   type: 'bad' | 'good'

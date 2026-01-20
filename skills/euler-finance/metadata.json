@@ -2,14 +2,11 @@
   "version": "1.0.0",
   "organization": "Euler Labs",
   "date": "January 2026",
-  "abstract": "Comprehensive guide for interacting with Euler Finance V2 protocol. Covers vault operations (deposit, borrow, repay), EVC orchestration (batching, sub-accounts, operators), risk management (health factors, liquidation), oracle integration (adapters, routing), EulerEarn yield aggregation, and EulerSwap AMM integration. Designed for AI agents and developers building on Euler.",
+  "abstract": "Core guide for interacting with Euler Finance V2 protocol. Covers vault operations (deposit, borrow, repay), EVC orchestration (batching, sub-accounts, operators), risk management (health factors, liquidation), architecture concepts (vault types, market design), interest rate models, security practices, and developer tools. For specialized topics, see companion skills: euler-oracles, euler-swap, euler-earn, euler-advanced.",
   "references": [
     "https://docs.euler.finance",
     "https://github.com/euler-xyz/euler-vault-kit",
     "https://github.com/euler-xyz/ethereum-vault-connector",
-    "https://github.com/euler-xyz/euler-price-oracle",
-    "https://github.com/euler-xyz/euler-earn",
-    "https://github.com/euler-xyz/euler-swap",
     "https://github.com/euler-xyz/evk-periphery"
   ]
 }

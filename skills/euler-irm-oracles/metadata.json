@@ -1,0 +1,11 @@
+{
+  "version": "1.0.0",
+  "organization": "Euler Labs",
+  "date": "January 2026",
+  "abstract": "Oracle and Interest Rate Model guide for Euler Finance V2 protocol. Covers deploying oracle adapters (Chainlink, Pyth, Uniswap TWAP, Chronicle, RedStone), configuring EulerRouter for price resolution, querying asset prices, and understanding IRM types (Linear Kink, Adaptive Curve, Fixed Cyclical Binary, Base Premium).",
+  "references": [
+    "https://docs.euler.finance",
+    "https://github.com/euler-xyz/euler-price-oracle",
+    "https://github.com/euler-xyz/evk-periphery"
+  ]
+}
