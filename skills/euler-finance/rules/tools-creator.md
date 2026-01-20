@@ -117,7 +117,9 @@ contract DeployVault is Script {
         // 5. Configure vault
         IEVault(vault).setInterestRateModel(irm);
         IEVault(vault).setHookConfig(address(0), 0);
-        IEVault(vault).setCaps(1000000e18, 500000e18);
+        // Caps use AmountCap uint16 encoding (0 = unlimited)
+        // See AmountCap.sol for encoding formula
+        IEVault(vault).setCaps(0, 0); // 0 = no cap
         IEVault(vault).setInterestFee(0.1e4); // 10%
         
         // 6. Configure LTV for collaterals

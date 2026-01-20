@@ -152,10 +152,198 @@ async function monitorHealth(account: Address, controller: Address) {
 setInterval(() => monitorHealth(account, controller), 60000);
 ```
 
+**Correct (using vault's accountLiquidity directly):**
+
+```solidity
+// accountLiquidity returns risk-adjusted values directly from the vault
+// This is what the vault uses internally for health checks
+
+// For borrow LTV (determines if you can borrow more)
+(uint256 collateralValue, uint256 liabilityValue) = IEVault(controller).accountLiquidity(
+    account,
+    false  // liquidation = false uses borrow LTV
+);
+
+// Health = collateralValue / liabilityValue
+// If collateralValue >= liabilityValue, account is healthy for borrowing
+bool canBorrow = collateralValue >= liabilityValue;
+
+// For liquidation LTV (determines if account can be liquidated)
+(uint256 collateralValueLiq, uint256 liabilityValueLiq) = IEVault(controller).accountLiquidity(
+    account,
+    true   // liquidation = true uses liquidation LTV
+);
+
+// If collateralValueLiq < liabilityValueLiq, account is liquidatable
+bool isLiquidatable = collateralValueLiq < liabilityValueLiq;
+```
+
+**Correct (detailed breakdown with accountLiquidityFull):**
+
+```solidity
+// accountLiquidityFull returns per-collateral breakdown
+(
+    address[] memory collaterals,
+    uint256[] memory collateralValues,
+    uint256 liabilityValue
+) = IEVault(controller).accountLiquidityFull(account, true);
+
+// Analyze each collateral's contribution
+for (uint256 i = 0; i < collaterals.length; i++) {
+    console.log("Collateral:", collaterals[i]);
+    console.log("Value:", collateralValues[i]);
+    
+    // Calculate this collateral's contribution percentage
+    uint256 totalCollateral = sumArray(collateralValues);
+    uint256 contribution = collateralValues[i] * 100 / totalCollateral;
+    console.log("Contribution:", contribution, "%");
+}
+
+console.log("Total Liability:", liabilityValue);
+```
+
+**TypeScript: Using accountLiquidity:**
+
+```typescript
+const vault = getContract({
+  address: controllerAddress,
+  abi: evaultABI,
+  client: publicClient
+});
+
+// Get liquidity with borrow LTV
+const [collateralBorrow, liabilityBorrow] = await vault.read.accountLiquidity([
+  account,
+  false  // borrow LTV
+]);
+
+// Get liquidity with liquidation LTV
+const [collateralLiq, liabilityLiq] = await vault.read.accountLiquidity([
+  account,
+  true   // liquidation LTV
+]);
+
+// Calculate both health factors
+const borrowHealth = liabilityBorrow > 0n 
+  ? (collateralBorrow * 10n ** 18n) / liabilityBorrow 
+  : MaxUint256;
+
+const liquidationHealth = liabilityLiq > 0n
+  ? (collateralLiq * 10n ** 18n) / liabilityLiq
+  : MaxUint256;
+
+console.log(`Borrow Health: ${formatUnits(borrowHealth, 18)}`);
+console.log(`Liquidation Health: ${formatUnits(liquidationHealth, 18)}`);
+
+// Full breakdown
+const [collaterals, values, liability] = await vault.read.accountLiquidityFull([
+  account,
+  true
+]);
+
+for (let i = 0; i < collaterals.length; i++) {
+  console.log(`${collaterals[i]}: ${formatUnits(values[i], 18)} value`);
+}
+```
+
+**Correct (disabling controller after full repayment):**
+
+```solidity
+// After fully repaying debt, you can disable the controller
+// This releases your collateral from the vault's control
+
+// First, ensure debt is zero
+uint256 debt = IEVault(controller).debtOf(account);
+require(debt == 0, "Outstanding debt");
+
+// Disable controller - must be called by the account owner
+// Note: This is called ON the controller vault, not the EVC
+IEVault(controller).disableController();
+
+// Now you can:
+// 1. Disable collateral: IEVC(evc).disableCollateral(account, collateralVault)
+// 2. Withdraw freely without health checks
+```
+
+**TypeScript: Full repay and disable flow:**
+
+```typescript
+const batchItems: BatchItem[] = [
+  // Repay all debt
+  {
+    onBehalfOfAccount: account,
+    targetContract: controllerVault,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evaultABI,
+      functionName: 'repay',
+      args: [MaxUint256, account],
+    }),
+  },
+  // Disable controller
+  {
+    onBehalfOfAccount: account,
+    targetContract: controllerVault,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evaultABI,
+      functionName: 'disableController',
+      args: [],
+    }),
+  },
+  // Disable collateral (optional - via EVC)
+  {
+    onBehalfOfAccount: zeroAddress,
+    targetContract: evcAddress,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evcABI,
+      functionName: 'disableCollateral',
+      args: [account, collateralVault],
+    }),
+  },
+  // Withdraw collateral
+  {
+    onBehalfOfAccount: account,
+    targetContract: collateralVault,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evaultABI,
+      functionName: 'withdraw',
+      args: [MaxUint256, account, account],
+    }),
+  },
+];
+
+await evc.batch(batchItems);
+```
+
+**Understanding checkAccountStatus and checkVaultStatus:**
+
+```solidity
+// These are EVC callback functions - NOT meant to be called directly by users
+// The EVC calls them during deferred checks at the end of batches
+
+// checkAccountStatus: Called by EVC to verify account health
+// - Reverts if account is unhealthy (collateral < liability)
+// - Returns magic value on success
+bytes4 magic = IEVault(controller).checkAccountStatus(account, collaterals);
+// magic == IEVCVault.checkAccountStatus.selector
+
+// checkVaultStatus: Called by EVC to verify vault caps
+// - Checks supply and borrow caps aren't exceeded
+// - Reverts with E_SupplyCapExceeded or E_BorrowCapExceeded
+// - Also triggers interest rate recalculation
+bytes4 magic = IEVault(vault).checkVaultStatus();
+```
+
 Key concepts:
 - Health > 1.0 = safe from liquidation
 - Borrow LTV: max health when taking new borrows
 - Liquidation LTV: health at which liquidation can occur
 - Always maintain buffer above 1.0 for price volatility
+- `accountLiquidity(account, false)` = borrow LTV values
+- `accountLiquidity(account, true)` = liquidation LTV values
+- Call `disableController()` after full repayment to release position
 
 Reference: [EVK Risk Manager Module](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/RiskManager.sol)

@@ -34,7 +34,7 @@ Comprehensive guide for interacting with Euler Finance V2 protocol. Covers vault
    - 3.1 [Check Account Health Factor](#31-check-account-health-factor)
    - 3.2 [How Liquidation Works on Euler](#32-how-liquidation-works-on-euler)
    - 3.3 [Monitor Position Health](#33-monitor-position-health)
-   - 3.4 [Understanding Risk Curators](#34-understanding-risk-curators)
+   - 3.4 [Understanding Risk Curators and Vault Governance](#34-understanding-risk-curators-and-vault-governance)
 4. [Oracle Integration](#4-oracle-integration) — **HIGH**
    - 4.1 [Configure EulerRouter for Price Resolution](#41-configure-eulerrouter-for-price-resolution)
    - 4.2 [Deploy an Oracle Adapter](#42-deploy-an-oracle-adapter)
@@ -47,7 +47,8 @@ Comprehensive guide for interacting with Euler Finance V2 protocol. Covers vault
 7. [Advanced Features](#7-advanced-features) — **MEDIUM**
    - 7.1 [EUL Reward Token Distribution](#71-eul-reward-token-distribution)
    - 7.2 [Fee Flow Controller Mechanics](#72-fee-flow-controller-mechanics)
-   - 7.3 [Vault Hooks and Use Cases](#73-vault-hooks-and-use-cases)
+   - 7.3 [Flash Loans and Debt Transfer](#73-flash-loans-and-debt-transfer)
+   - 7.4 [Vault Hooks and Use Cases](#74-vault-hooks-and-use-cases)
 8. [Security](#8-security) — **CRITICAL**
    - 8.1 [Security and Audits](#81-security-and-audits)
 9. [Developer Tools](#9-developer-tools) — **MEDIUM**
@@ -507,6 +508,33 @@ const requiredRepay = calculateRepayForHealth(
 await asset.approve(vault, requiredRepay);
 await vault.repay(requiredRepay, account);
 ```
+
+**Correct: repay with vault shares instead of underlying**
+
+```typescript
+const vault = getContract({
+  address: vaultAddress,
+  abi: evaultABI,
+  client: walletClient
+});
+
+// Check balances
+const myDebt = await vault.read.debtOf([account]);
+const myShares = await vault.read.balanceOf([account]);
+const shareValue = await vault.read.convertToAssets([myShares]);
+
+console.log(`Debt: ${myDebt}, Shares: ${myShares}, Share Value: ${shareValue}`);
+
+// Repay with all shares (up to debt amount)
+const [sharesBurned, assetsRepaid] = await vault.write.repayWithShares([
+  MaxUint256,  // use all available shares
+  account
+]);
+
+console.log(`Burned ${sharesBurned} shares, repaid ${assetsRepaid} debt`);
+```
+
+**TypeScript: repayWithShares example:**
 
 After fully repaying:
 
@@ -1185,6 +1213,152 @@ async function monitorHealth(account: Address, controller: Address) {
 setInterval(() => monitorHealth(account, controller), 60000);
 ```
 
+**Correct: using vault's accountLiquidity directly**
+
+```solidity
+// accountLiquidity returns risk-adjusted values directly from the vault
+// This is what the vault uses internally for health checks
+
+// For borrow LTV (determines if you can borrow more)
+(uint256 collateralValue, uint256 liabilityValue) = IEVault(controller).accountLiquidity(
+    account,
+    false  // liquidation = false uses borrow LTV
+);
+
+// Health = collateralValue / liabilityValue
+// If collateralValue >= liabilityValue, account is healthy for borrowing
+bool canBorrow = collateralValue >= liabilityValue;
+
+// For liquidation LTV (determines if account can be liquidated)
+(uint256 collateralValueLiq, uint256 liabilityValueLiq) = IEVault(controller).accountLiquidity(
+    account,
+    true   // liquidation = true uses liquidation LTV
+);
+
+// If collateralValueLiq < liabilityValueLiq, account is liquidatable
+bool isLiquidatable = collateralValueLiq < liabilityValueLiq;
+```
+
+**Correct: detailed breakdown with accountLiquidityFull**
+
+```typescript
+const vault = getContract({
+  address: controllerAddress,
+  abi: evaultABI,
+  client: publicClient
+});
+
+// Get liquidity with borrow LTV
+const [collateralBorrow, liabilityBorrow] = await vault.read.accountLiquidity([
+  account,
+  false  // borrow LTV
+]);
+
+// Get liquidity with liquidation LTV
+const [collateralLiq, liabilityLiq] = await vault.read.accountLiquidity([
+  account,
+  true   // liquidation LTV
+]);
+
+// Calculate both health factors
+const borrowHealth = liabilityBorrow > 0n 
+  ? (collateralBorrow * 10n ** 18n) / liabilityBorrow 
+  : MaxUint256;
+
+const liquidationHealth = liabilityLiq > 0n
+  ? (collateralLiq * 10n ** 18n) / liabilityLiq
+  : MaxUint256;
+
+console.log(`Borrow Health: ${formatUnits(borrowHealth, 18)}`);
+console.log(`Liquidation Health: ${formatUnits(liquidationHealth, 18)}`);
+
+// Full breakdown
+const [collaterals, values, liability] = await vault.read.accountLiquidityFull([
+  account,
+  true
+]);
+
+for (let i = 0; i < collaterals.length; i++) {
+  console.log(`${collaterals[i]}: ${formatUnits(values[i], 18)} value`);
+}
+```
+
+**TypeScript: Using accountLiquidity:**
+
+**Correct: disabling controller after full repayment**
+
+```typescript
+const batchItems: BatchItem[] = [
+  // Repay all debt
+  {
+    onBehalfOfAccount: account,
+    targetContract: controllerVault,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evaultABI,
+      functionName: 'repay',
+      args: [MaxUint256, account],
+    }),
+  },
+  // Disable controller
+  {
+    onBehalfOfAccount: account,
+    targetContract: controllerVault,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evaultABI,
+      functionName: 'disableController',
+      args: [],
+    }),
+  },
+  // Disable collateral (optional - via EVC)
+  {
+    onBehalfOfAccount: zeroAddress,
+    targetContract: evcAddress,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evcABI,
+      functionName: 'disableCollateral',
+      args: [account, collateralVault],
+    }),
+  },
+  // Withdraw collateral
+  {
+    onBehalfOfAccount: account,
+    targetContract: collateralVault,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evaultABI,
+      functionName: 'withdraw',
+      args: [MaxUint256, account, account],
+    }),
+  },
+];
+
+await evc.batch(batchItems);
+```
+
+**TypeScript: Full repay and disable flow:**
+
+**Understanding checkAccountStatus and checkVaultStatus:**
+
+```solidity
+// These are EVC callback functions - NOT meant to be called directly by users
+// The EVC calls them during deferred checks at the end of batches
+
+// checkAccountStatus: Called by EVC to verify account health
+// - Reverts if account is unhealthy (collateral < liability)
+// - Returns magic value on success
+bytes4 magic = IEVault(controller).checkAccountStatus(account, collaterals);
+// magic == IEVCVault.checkAccountStatus.selector
+
+// checkVaultStatus: Called by EVC to verify vault caps
+// - Checks supply and borrow caps aren't exceeded
+// - Reverts with E_SupplyCapExceeded or E_BorrowCapExceeded
+// - Also triggers interest rate recalculation
+bytes4 magic = IEVault(vault).checkVaultStatus();
+```
+
 Key concepts:
 
 - Health > 1.0 = safe from liquidation
@@ -1195,135 +1369,297 @@ Key concepts:
 
 - Always maintain buffer above 1.0 for price volatility
 
+- `accountLiquidity(account, false)` = borrow LTV values
+
+- `accountLiquidity(account, true)` = liquidation LTV values
+
+- Call `disableController()` after full repayment to release position
+
 Reference: [https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/RiskManager.sol](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/RiskManager.sol)
 
 ### 3.2 How Liquidation Works on Euler
 
-**Impact: HIGH (Understanding liquidation mechanics and protection)**
+**Impact: HIGH (Understanding liquidation mechanics, math, and protection)**
 
-Liquidation protects the protocol by allowing anyone to repay an unhealthy account's debt in exchange for their collateral at a discount. Understanding this mechanism is crucial for both avoiding liquidation and participating as a liquidator.
+Liquidation protects the protocol by allowing anyone to repay an unhealthy account's debt in exchange for their collateral at a discount. The discount is dynamically calculated based on how unhealthy the position is.
 
-**Incorrect: assuming liquidation is always profitable**
+**Liquidation Math: from Liquidation.sol**
 
 ```solidity
-// Liquidation is not always profitable!
-// Must check discount, gas costs, and oracle prices
-IEVault(vault).liquidate(violator, collateral, maxRepay, 0);
-// May revert or result in loss if not checked properly
+// ═══════════════════════════════════════════════════════════
+// DISCOUNT CALCULATION
+// ═══════════════════════════════════════════════════════════
+
+// Health score (discountFactor) = risk-adjusted collateral / liability
+// discountFactor = 1.0 means healthy, < 1.0 means liquidatable
+uint256 discountFactor = collateralAdjustedValue * 1e18 / liabilityValue;
+
+// Discount = 1 - discountFactor (i.e., 1 - health score)
+// Example: health = 0.85 → discount = 15%
+
+// Cap discount at maxLiquidationDiscount (set by governor)
+uint256 minDiscountFactor = 1e18 - (1e18 * maxLiquidationDiscount / 1e4);
+if (discountFactor < minDiscountFactor) {
+    discountFactor = minDiscountFactor;  // Cap the discount
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAX REPAY AND YIELD CALCULATION
+// ═══════════════════════════════════════════════════════════
+
+// Start with full liability as max repay
+uint256 maxRepayValue = liabilityValue;
+
+// Yield value = repay value / discountFactor (more yield at lower health)
+uint256 maxYieldValue = maxRepayValue * 1e18 / discountFactor;
+
+// Limit by available collateral
+uint256 collateralValue = oracle.getQuote(collateralBalance, collateral, unitOfAccount);
+if (collateralValue < maxYieldValue) {
+    // Can only seize what's available
+    maxRepayValue = collateralValue * discountFactor / 1e18;
+    maxYieldValue = collateralValue;
+}
+
+// Convert values to asset amounts
+repay = maxRepayValue * liability / liabilityValue;
+yieldBalance = maxYieldValue * collateralBalance / collateralValue;
 ```
 
-**Correct: checking if account is liquidatable**
+**Practical Example:**
+
+```typescript
+Position:
+- Debt: 1000 USDC (value: $1000)
+- Collateral: 1 ETH (value: $1200)
+- Liquidation LTV: 90%
+- Max Liquidation Discount: 15%
+
+Health Score:
+- Adjusted Collateral = $1200 * 90% = $1080
+- Health = $1080 / $1000 = 1.08 → HEALTHY (>1.0)
+
+After ETH drops to $1050:
+- Adjusted Collateral = $1050 * 90% = $945
+- Health = $945 / $1000 = 0.945 → LIQUIDATABLE (<1.0)
+- Discount Factor = 0.945
+- Discount = 1 - 0.945 = 5.5%
+
+Liquidation:
+- Repay: $1000 of debt
+- Yield: $1000 / 0.945 = $1058 worth of ETH
+- Liquidator profit: $58 (5.5% discount)
+```
+
+**Correct: checking liquidation profitability**
 
 ```solidity
-// Check liquidation eligibility
-function checkLiquidation(
-    address vault,
-    address violator,
-    address collateral
-) public view returns (
-    bool isLiquidatable,
-    uint256 maxRepay,
-    uint256 maxYield
+import {IEVault} from "evk/EVault/IEVault.sol";
+
+// checkLiquidation returns (0, 0) if account is healthy
+(uint256 maxRepay, uint256 maxYield) = IEVault(vault).checkLiquidation(
+    liquidator,   // who will receive collateral
+    violator,     // unhealthy account
+    collateral    // which collateral to seize
+);
+
+if (maxRepay == 0) {
+    // Account is healthy or no liquidation available
+    return;
+}
+
+// Calculate profit
+// Repay is in debt asset terms, yield is in collateral terms
+uint256 repayValueUsd = maxRepay * debtPriceUsd / 1e18;
+uint256 yieldValueUsd = maxYield * collateralPriceUsd / 1e18;
+uint256 grossProfit = yieldValueUsd - repayValueUsd;
+
+// Account for gas, slippage, swap fees
+uint256 netProfit = grossProfit - estimatedCosts;
+require(netProfit > 0, "Not profitable");
+```
+
+**Correct: executing liquidation**
+
+```solidity
+// liquidate(violator, collateral, repayAssets, minYieldBalance)
+// - violator: the unhealthy account
+// - collateral: which collateral vault to seize from
+// - repayAssets: how much debt to repay (use type(uint256).max for all)
+// - minYieldBalance: minimum collateral to receive (slippage protection)
+
+// Must have debt tokens approved
+IERC20(debtAsset).approve(vault, repayAmount);
+
+// Execute - this transfers debt from violator to liquidator,
+// and seizes collateral from violator to liquidator
+IEVault(vault).liquidate(
+    violator,
+    collateral,
+    repayAmount,
+    minYieldBalance  // revert if yield < this
+);
+```
+
+**Liquidation Constraints: from source**
+
+```solidity
+// These checks happen inside calculateLiquidation():
+
+// 1. Cannot self-liquidate
+require(violator != liquidator, "E_SelfLiquidation");
+
+// 2. Collateral must have LTV configured (recognized)
+require(isRecognizedCollateral(collateral), "E_BadCollateral");
+
+// 3. Vault must be violator's controller
+validateController(violator);
+
+// 4. Violator must have enabled this collateral
+require(isCollateralEnabled(violator, collateral), "E_CollateralDisabled");
+
+// 5. No deferred status checks (prevents batch manipulation)
+require(!isAccountStatusCheckDeferred(violator), "E_ViolatorLiquidityDeferred");
+
+// 6. Must wait for cool-off period after last status check
+require(!isInLiquidationCoolOff(violator), "E_LiquidationCoolOff");
+
+// Cool-off check:
+bool inCoolOff = block.timestamp < lastStatusCheckTimestamp + liquidationCoolOffTime;
+```
+
+**Debt Socialization: bad debt handling**
+
+```solidity
+// Debt socialization occurs when:
+// 1. Liability value >= MIN_SOCIALIZATION_LIABILITY_VALUE (1e6 in unit of account)
+// 2. CFG_DONT_SOCIALIZE_DEBT flag is NOT set
+// 3. Remaining debt after liquidation (liability > repay)
+// 4. Violator has no more collateral
+
+// When triggered:
+// - Remaining debt is written off
+// - Loss is spread across all depositors (share value decreases)
+// - Emit DebtSocialized(violator, remainingDebt)
+
+// This protects liquidators from unprofitable liquidations
+// when collateral value < debt value
+```
+
+**Worthless Collateral Edge Case:**
+
+```typescript
+import { getContract, parseUnits, formatUnits } from 'viem';
+
+async function checkAndLiquidate(
+  vault: Address,
+  violator: Address,
+  collateral: Address
 ) {
-    // Check health - must be below 1.0
-    address[] memory collaterals = IEVC(evc).getCollaterals(violator);
-    
-    try IEVault(vault).checkAccountStatus(violator, collaterals) {
-        // Account is healthy - cannot liquidate
-        return (false, 0, 0);
-    } catch {
-        // Account is unhealthy - check liquidation details
-    }
-    
-    // Get liquidation parameters
-    // checkLiquidation(liquidator, violator, collateral) - 3 params
-    (maxRepay, maxYield) = IEVault(vault).checkLiquidation(
-        msg.sender,  // liquidator address
-        violator,
-        collateral
-    );
-    
-    isLiquidatable = maxRepay > 0;
+  const vaultContract = getContract({
+    address: vault,
+    abi: evaultABI,
+    client: walletClient
+  });
+
+  // Check liquidation opportunity
+  const [maxRepay, maxYield] = await vaultContract.read.checkLiquidation([
+    liquidatorAddress,
+    violator,
+    collateral
+  ]);
+
+  if (maxRepay === 0n) {
+    console.log('Account is healthy');
+    return;
+  }
+
+  // Get prices for profit calculation
+  const debtAsset = await vaultContract.read.asset();
+  const debtDecimals = await vaultContract.read.decimals();
+  
+  // Calculate value (simplified - use oracle in production)
+  const repayValue = Number(formatUnits(maxRepay, Number(debtDecimals)));
+  const yieldValue = /* calculate from yield amount and price */;
+  const discount = (yieldValue - repayValue) / repayValue * 100;
+
+  console.log(`Liquidation available:`);
+  console.log(`  Repay: ${repayValue} (debt asset)`);
+  console.log(`  Yield: ${yieldValue} (collateral)`);
+  console.log(`  Discount: ${discount.toFixed(2)}%`);
+
+  // Approve and execute
+  const debtToken = getContract({
+    address: debtAsset,
+    abi: erc20ABI,
+    client: walletClient
+  });
+  
+  await debtToken.write.approve([vault, maxRepay]);
+  
+  // Set minYield slightly below maxYield for slippage tolerance
+  const minYield = maxYield * 99n / 100n;  // 1% slippage
+  
+  const tx = await vaultContract.write.liquidate([
+    violator,
+    collateral,
+    maxRepay,
+    minYield
+  ]);
+
+  console.log(`Liquidation executed: ${tx}`);
 }
 ```
 
-**Correct: executing a liquidation**
+**TypeScript: Complete liquidation bot example:**
 
-```solidity
-// Step 1: Verify liquidation is profitable
-// checkLiquidation(liquidator, violator, collateral) returns (maxRepay, maxYield)
-(uint256 maxRepay, uint256 maxYield) = IEVault(vault).checkLiquidation(
-    address(this),  // liquidator
-    violator,
-    collateral
-);
-
-// Calculate if profitable after gas
-uint256 repayValue = maxRepay * debtPrice / 1e18;
-uint256 yieldValue = maxYield * collateralPrice / 1e18;
-uint256 profit = yieldValue - repayValue;
-require(profit > estimatedGasCost, "Not profitable");
-
-// Step 2: Approve debt tokens
-IERC20(debtAsset).approve(vault, maxRepay);
-
-// Step 3: Execute liquidation via EVC's controlCollateral
-// This allows the vault to seize collateral on behalf of liquidator
-IEVC.BatchItem[] memory items = new IEVC.BatchItem[](1);
-items[0] = IEVC.BatchItem({
-    onBehalfOfAccount: address(this),
-    targetContract: vault,
-    value: 0,
-    data: abi.encodeCall(
-        IEVault.liquidate,
-        (violator, collateral, maxRepay, 0)
-    )
-});
-
-IEVC(evc).batch(items);
-```
-
-**Correct: liquidation with flash loan**
+**Flash Loan Liquidation: capital-efficient**
 
 ```typescript
-// Use flash loan to liquidate without capital
-const batchItems = [
-  // 1. Flash borrow the debt asset
+// Use EVC batch to atomically:
+// 1. Borrow debt asset (using another vault)
+// 2. Execute liquidation
+// 3. Swap seized collateral for debt asset
+// 4. Repay borrowed amount
+// 5. Keep profit
+
+const batchItems: BatchItem[] = [
+  // Borrow debt tokens from a vault where you have collateral
   {
     onBehalfOfAccount: liquidator,
-    targetContract: flashLoanVault,
+    targetContract: flashVault,
     value: 0n,
     data: encodeFunctionData({
-      abi: eVaultABI,
+      abi: evaultABI,
       functionName: 'borrow',
       args: [repayAmount, liquidator],
     }),
   },
-  // 2. Execute liquidation
+  // Execute liquidation
   {
     onBehalfOfAccount: liquidator,
     targetContract: debtVault,
     value: 0n,
     data: encodeFunctionData({
-      abi: eVaultABI,
+      abi: evaultABI,
       functionName: 'liquidate',
-      args: [violator, collateralVault, repayAmount, 0],
+      args: [violator, collateralVault, repayAmount, minYield],
     }),
   },
-  // 3. Swap seized collateral for debt asset
+  // Swap collateral to debt asset (via DEX)
   {
     onBehalfOfAccount: liquidator,
     targetContract: swapRouter,
     value: 0n,
     data: swapCalldata,
   },
-  // 4. Repay flash loan
+  // Repay flash loan
   {
     onBehalfOfAccount: liquidator,
-    targetContract: flashLoanVault,
+    targetContract: flashVault,
     value: 0n,
     data: encodeFunctionData({
-      abi: eVaultABI,
+      abi: evaultABI,
       functionName: 'repay',
       args: [repayAmount, liquidator],
     }),
@@ -1331,35 +1667,20 @@ const batchItems = [
 ];
 
 await evc.batch(batchItems);
+// Health check runs at end - reverts if still unhealthy
 ```
 
-**Liquidation Parameters:**
+**Key Parameters:**
 
-```solidity
-// Key vault parameters affecting liquidation
-uint16 maxLiquidationDiscount = IEVault(vault).maxLiquidationDiscount();
-// e.g., 0.15e4 = 15% max discount
+| Parameter | Getter | Description |
 
-uint16 liquidationCoolOffTime = IEVault(vault).liquidationCoolOffTime();
-// Time after liquidation before account can be liquidated again
+|-----------|--------|-------------|
 
-// Discount calculation
-// Discount increases as health decreases below 1.0
-// At health = 0.9, discount might be 5%
-// At health = 0.5, discount could be max (15%)
-```
+| maxLiquidationDiscount | `maxLiquidationDiscount()` | Max discount (e.g., 0.15e4 = 15%) |
 
-Key concepts:
+| liquidationCoolOffTime | `liquidationCoolOffTime()` | Seconds after status check before liquidatable |
 
-- Liquidation only possible when health < 1.0
-
-- Liquidator repays debt, receives collateral + discount
-
-- Cool-off period prevents repeated liquidations
-
-- Bad debt socialization if liquidation doesn't cover all debt
-
-- Use batch for atomic flash-loan liquidations
+| liquidationLTV | `LTVLiquidation(collateral)` | LTV threshold for liquidation |
 
 Reference: [https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Liquidation.sol](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Liquidation.sol)
 
@@ -1569,135 +1890,213 @@ Key practices:
 
 Reference: [https://docs.euler.finance/creator-tools/liquidation-bot/](https://docs.euler.finance/creator-tools/liquidation-bot/)
 
-### 3.4 Understanding Risk Curators
+### 3.4 Understanding Risk Curators and Vault Governance
 
 **Impact: HIGH (Essential for vault governance and risk management)**
 
-Risk Curators are trusted entities responsible for ongoing vault configuration and risk management in Euler V2. They act as stewards of vault parameters.
+Risk Curators (governors) are trusted entities responsible for ongoing vault configuration and risk management in Euler V2. They have full control over vault parameters through governance functions.
+
+- [Governance.sol Source](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Governance.sol)
+
+- [CapRiskSteward.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/Governor/CapRiskSteward.sol)
 
 **Incorrect: assuming anyone can configure vaults**
 
 ```solidity
-// WRONG: Only authorized addresses can modify vault config
+// WRONG: Only governor can modify vault config
 IEVault vault = IEVault(vaultAddress);
-vault.setLTV(collateral, 0.8e4, 0.9e4, 0); // Will revert!
-vault.setCaps(1000000e18, 500000e18);       // Will revert!
+vault.setLTV(collateral, 8000, 9000, 0);  // Will revert with E_Unauthorized!
+vault.setCaps(100, 50);                    // Will revert with E_Unauthorized!
+// Note: setCaps takes uint16 AmountCap encoded values, not raw asset amounts
 ```
 
-**Correct: understanding governance roles**
+**Complete list of governance functions:**
 
 ```solidity
 import {IEVault} from "evk/EVault/IEVault.sol";
 
 IEVault vault = IEVault(vaultAddress);
 
-// Check governance roles
-address governorAdmin = vault.governorAdmin();     // Can change all settings
-address feeReceiver = vault.feeReceiver();         // Receives protocol fees
+// ═══════════════════════════════════════════════════════════
+// GOVERNANCE TRANSFER
+// ═══════════════════════════════════════════════════════════
 
-// Governance hierarchy in Euler:
-// 1. Governor Admin - full control over vault configuration
-// 2. Fee Receiver - receives interest fees
-// 3. Hook Target - can implement additional access control
+// Transfer governance to new address (or address(0) to renounce)
+vault.setGovernorAdmin(newGovernor);
 
-// Only governor can call these functions:
-// - setLTV(collateral, borrowLTV, liquidationLTV, rampDuration)
-// - setCaps(supplyCap, borrowCap)
-// - setInterestRateModel(irm)
-// - setInterestFee(fee)
-// - setHookConfig(hookTarget, hookedOps)
-// - setConfigFlags(flags)
-// - setGovernorAdmin(newGovernor)
+// Set fee receiver (receives governor's share of interest fees)
+// If set to address(0), governor forfeits fees to protocol
+vault.setFeeReceiver(newFeeReceiver);
+
+// ═══════════════════════════════════════════════════════════
+// LTV CONFIGURATION
+// ═══════════════════════════════════════════════════════════
+
+// Configure LTV for a collateral asset
+// borrowLTV: max LTV for new borrows (in 1e4 scale, e.g., 0.85e4 = 85%)
+// liquidationLTV: LTV at which liquidation is possible (must be >= borrowLTV)
+// rampDuration: if lowering LTV, seconds to ramp down (prevents instant liquidations)
+vault.setLTV(
+    collateralVault,    // address of collateral vault
+    0.85e4,             // 85% borrow LTV
+    0.90e4,             // 90% liquidation LTV  
+    0                   // ramp duration (0 for immediate, or seconds to ramp)
+);
+
+// IMPORTANT: When lowering liquidation LTV, use rampDuration to give users
+// time to adjust positions. Setting rampDuration > 0 when RAISING LTV will revert.
+
+// To disable a collateral, set LTV to 0 (with optional ramp):
+vault.setLTV(collateralVault, 0, 0, 7 days); // 7-day ramp to 0
+
+// ═══════════════════════════════════════════════════════════
+// CAPS
+// ═══════════════════════════════════════════════════════════
+
+// Set supply and borrow caps (in AmountCap format - raw uint16)
+// Use AmountCap library to encode/decode
+// 0 = unlimited, otherwise encoded value
+vault.setCaps(
+    supplyCap,   // uint16 encoded supply cap
+    borrowCap    // uint16 encoded borrow cap
+);
+
+// ═══════════════════════════════════════════════════════════
+// INTEREST RATE MODEL
+// ═══════════════════════════════════════════════════════════
+
+// Set new interest rate model contract
+vault.setInterestRateModel(newIRMAddress);
+
+// Set interest fee (portion of interest that goes to fees)
+// Range: 0 to 1e4 (100%)
+// Guaranteed range (no protocol approval needed): 0.1e4 to 1e4 (10% to 100%)
+// Outside this range requires protocolConfig approval
+vault.setInterestFee(0.1e4);  // 10% interest fee
+
+// ═══════════════════════════════════════════════════════════
+// LIQUIDATION PARAMETERS
+// ═══════════════════════════════════════════════════════════
+
+// Set maximum liquidation discount
+// In 1e4 scale (e.g., 0.15e4 = 15% max discount)
+// Cannot be exactly 1e4 (would cause division by zero)
+vault.setMaxLiquidationDiscount(0.15e4);  // 15% max discount
+
+// Set liquidation cool-off time (seconds)
+// Time that must pass after successful account status check before liquidation
+vault.setLiquidationCoolOffTime(0);  // 0 = no cool-off
+
+// ═══════════════════════════════════════════════════════════
+// HOOKS AND FLAGS
+// ═══════════════════════════════════════════════════════════
+
+// Configure hook target and which operations are hooked
+// hookedOps is a bitfield - see Constants.sol for operation flags
+vault.setHookConfig(
+    hookTargetAddress,  // contract implementing IHookTarget
+    hookedOps           // bitfield of operations to hook
+);
+
+// Set configuration flags (see Constants.sol)
+vault.setConfigFlags(configFlags);
+
+// ═══════════════════════════════════════════════════════════
+// FEE CONVERSION (not governorOnly - anyone can call)
+// ═══════════════════════════════════════════════════════════
+
+// Convert accumulated fees to shares for governor and protocol
+// Can be called by anyone
+vault.convertFees();
 ```
 
-**Correct: implementing risk steward pattern**
+All functions below require `governorOnly` modifier (caller must be `governorAdmin`):
+
+**Reading governance state:**
+
+```typescript
+import { getContract, parseUnits } from 'viem';
+
+const vault = getContract({
+  address: vaultAddress,
+  abi: evaultABI,
+  client: walletClient,  // Must be governor
+});
+
+// Check current state
+const governor = await vault.read.governorAdmin();
+console.log(`Governor: ${governor}`);
+
+// Configure LTV for a new collateral
+await vault.write.setLTV([
+  collateralVaultAddress,
+  8500n,   // 85% borrow LTV (0.85e4)
+  9000n,   // 90% liquidation LTV (0.90e4)
+  0n       // No ramp
+]);
+
+// Set caps
+await vault.write.setCaps([
+  supplyCap,  // uint16 AmountCap encoded
+  borrowCap   // uint16 AmountCap encoded
+]);
+
+// Set interest fee (10%)
+await vault.write.setInterestFee([1000n]);  // 0.1e4
+
+// Set max liquidation discount (15%)
+await vault.write.setMaxLiquidationDiscount([1500n]);  // 0.15e4
+
+// Set new IRM
+await vault.write.setInterestRateModel([newIRMAddress]);
+
+// Read all collaterals and their LTVs
+const ltvList = await vault.read.LTVList();
+for (const collateral of ltvList) {
+  const [borrowLTV, liqLTV, initLTV, targetTs, rampDur] = 
+    await vault.read.LTVFull([collateral]);
+  console.log(`${collateral}: borrow=${borrowLTV/100}%, liq=${liqLTV/100}%`);
+}
+```
+
+**TypeScript: Complete governance example:**
+
+**Important constraints from Governance.sol:**
+
+```solidity
+// Protocol fee share cannot exceed 50%
+uint16 constant MAX_PROTOCOL_FEE_SHARE = 0.5e4;
+
+// Interest fee guaranteed range (no approval needed)
+uint16 constant GUARANTEED_INTEREST_FEE_MIN = 0.1e4;  // 10%
+uint16 constant GUARANTEED_INTEREST_FEE_MAX = 1e4;    // 100%
+
+// LTV constraints:
+// - borrowLTV must be <= liquidationLTV
+// - Cannot self-collateralize (collateral != vault address)
+// - rampDuration > 0 only valid when LOWERING LTV
+// - maxLiquidationDiscount cannot equal exactly 1e4 (100%)
+```
+
+**Risk Steward pattern for limited governance:**
 
 ```solidity
 import {CapRiskSteward} from "evk-periphery/Governor/CapRiskSteward.sol";
 
 // CapRiskSteward allows limited cap adjustments without full governance
-// This enables faster response to market conditions
-
-// Deploy risk steward with limits
 CapRiskSteward steward = new CapRiskSteward(
     evc,
     admin,
-    3 days,      // riskSteerCooldown: minimum time between adjustments
+    3 days,      // riskSteerCooldown: min time between adjustments
     0.1e18       // riskSteerCapLimit: max 10% change per adjustment
 );
 
-// Add vault to steward management
 steward.setRiskSteerVault(vaultAddress, true);
-
-// Steward can adjust caps within limits
 steward.setSupplyCap(vaultAddress, newSupplyCap);
 steward.setBorrowCap(vaultAddress, newBorrowCap);
 ```
 
-**Correct: GovernedPerspective for trusted vaults**
-
-```solidity
-import {GovernedPerspective} from "evk-periphery/Perspectives/deployed/GovernedPerspective.sol";
-
-// GovernedPerspective maintains whitelist of trusted vaults
-GovernedPerspective perspective = GovernedPerspective(perspectiveAddress);
-
-// Only owner can add/remove vaults
-perspective.perspectiveVerify(vaultAddress, true);  // Add to whitelist
-perspective.perspectiveUnverify(vaultAddress);       // Remove from whitelist
-
-// Check if vault is verified (trusted)
-bool isVerified = perspective.isVerified(vaultAddress);
-```
-
-**Risk Curator Responsibilities:**
-
-1. **LTV Configuration**: Setting appropriate borrow and liquidation LTVs for each collateral
-
-2. **Cap Management**: Adjusting supply/borrow caps based on market conditions
-
-3. **IRM Selection**: Choosing appropriate interest rate models
-
-4. **Oracle Configuration**: Ensuring reliable price feeds
-
-5. **Emergency Response**: Pausing operations if issues are detected
-
-**Correct: using Guardian for emergency actions**
-
-```typescript
-import { getContract } from 'viem';
-
-const vault = getContract({
-  address: vaultAddress,
-  abi: evaultABI,
-  client: publicClient,
-});
-
-// Check who governs this vault
-const governor = await vault.read.governorAdmin();
-const feeReceiver = await vault.read.feeReceiver();
-const [hookTarget, hookedOps] = await vault.read.hookConfig();
-
-console.log(`Governor: ${governor}`);
-console.log(`Fee Receiver: ${feeReceiver}`);
-console.log(`Hook Target: ${hookTarget}`);
-
-// Check if vault is in governed perspective (Euler-vetted)
-const perspective = getContract({
-  address: governedPerspectiveAddress,
-  abi: perspectiveABI,
-  client: publicClient,
-});
-
-const isEulerVerified = await perspective.read.isVerified([vaultAddress]);
-console.log(`Euler Verified: ${isEulerVerified}`);
-```
-
-**TypeScript: Checking vault governance:**
-
-When integrating with Euler, prefer vaults verified in `GovernedPerspective` as they have been reviewed by Euler to be not malicious however risk assesement must be done by the Curator and assesed by individual user for their appetite. 
-
-Reference: [https://github.com/euler-xyz/evk-periphery/blob/master/src/Governor/CapRiskSteward.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/Governor/CapRiskSteward.sol)
+When integrating with Euler, prefer vaults verified in `GovernedPerspective` as they have been reviewed by Euler. However, risk assessment must be done by the Curator and assessed by individual users for their risk appetite.
 
 ---
 
@@ -2840,7 +3239,198 @@ FeeFlowControllerEVK supports bridging payment tokens to other chains via LayerZ
 
 Reference: [https://github.com/euler-xyz/evk-periphery/blob/master/src/FeeFlow/FeeFlowControllerEVK.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/FeeFlow/FeeFlowControllerEVK.sol)
 
-### 7.3 Vault Hooks and Use Cases
+### 7.3 Flash Loans and Debt Transfer
+
+**Impact: HIGH (Advanced borrowing operations for arbitrage and debt management)**
+
+Euler vaults support flash loans (borrow and repay in same transaction) and debt transfer (pullDebt to take on another account's debt).
+
+**Flash Loan Basics:**
+
+```solidity
+import {IFlashLoan} from "evk/interfaces/IFlashLoan.sol";
+
+// Flash loans on Euler are FREE (no fee)
+// Must implement IFlashLoan interface and repay in same tx
+
+contract MyFlashBorrower is IFlashLoan {
+    function executeFlashLoan(address vault, uint256 amount) external {
+        // Request flash loan - vault transfers assets to this contract
+        IEVault(vault).flashLoan(amount, abi.encode(/* your data */));
+    }
+    
+    // Vault calls this after transferring assets
+    function onFlashLoan(bytes memory data) external override {
+        // Decode your data
+        // ... do arbitrage, liquidation, etc ...
+        
+        // MUST return assets to vault before function ends
+        // Vault checks: balanceOf(vault) >= originalBalance
+        IERC20(asset).transfer(msg.sender, amount);
+    }
+}
+```
+
+**Flash Loan for Liquidation:**
+
+```typescript
+// Flash loans can also be done via EVC batch with borrow/repay
+// This doesn't require implementing IFlashLoan interface
+
+const batchItems: BatchItem[] = [
+  // 1. Borrow from a vault where you have credit
+  {
+    onBehalfOfAccount: myAccount,
+    targetContract: sourceVault,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evaultABI,
+      functionName: 'borrow',
+      args: [borrowAmount, myAccount],
+    }),
+  },
+  // 2. Do your operation (swap, liquidate, etc.)
+  {
+    onBehalfOfAccount: myAccount,
+    targetContract: swapRouter,
+    value: 0n,
+    data: swapCalldata,
+  },
+  // 3. Repay the borrow
+  {
+    onBehalfOfAccount: myAccount,
+    targetContract: sourceVault,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evaultABI,
+      functionName: 'repay',
+      args: [borrowAmount, myAccount],
+    }),
+  },
+];
+
+// Health check at end ensures you're solvent
+await evc.batch(batchItems);
+```
+
+**TypeScript: Flash loan via EVC batch:**
+
+**Pull Debt: take on another account's debt**
+
+```typescript
+// Move debt from old sub-account to new one
+
+const oldSubAccount = getSubAccountAddress(mainAccount, 1);
+const newSubAccount = getSubAccountAddress(mainAccount, 2);
+
+const batchItems: BatchItem[] = [
+  // Setup new account with collateral
+  {
+    onBehalfOfAccount: newSubAccount,
+    targetContract: collateralVault,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evaultABI,
+      functionName: 'deposit',
+      args: [collateralAmount, newSubAccount],
+    }),
+  },
+  // Enable collateral on new account
+  {
+    onBehalfOfAccount: zeroAddress,
+    targetContract: evcAddress,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evcABI,
+      functionName: 'enableCollateral',
+      args: [newSubAccount, collateralVault],
+    }),
+  },
+  // Enable controller on new account
+  {
+    onBehalfOfAccount: zeroAddress,
+    targetContract: evcAddress,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evcABI,
+      functionName: 'enableController',
+      args: [newSubAccount, debtVault],
+    }),
+  },
+  // Pull debt from old account to new account
+  {
+    onBehalfOfAccount: newSubAccount,
+    targetContract: debtVault,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: evaultABI,
+      functionName: 'pullDebt',
+      args: [MaxUint256, oldSubAccount],
+    }),
+  },
+];
+
+await evc.batch(batchItems);
+// Old account now has 0 debt, can withdraw collateral
+```
+
+**Use Case: Account Migration:**
+
+**Touch - Force Interest Accrual:**
+
+```solidity
+// touch() forces interest accrual without any other operation
+// Useful for:
+// - Updating interest accumulator before queries
+// - Ensuring accurate debtOf/totalBorrows values
+// - MEV protection in some scenarios
+
+IEVault(vault).touch();
+
+// Now all debt-related queries reflect latest interest
+uint256 exactDebt = vault.debtOf(account);
+```
+
+**Borrowing View Functions:**
+
+```typescript
+const vault = getContract({
+  address: vaultAddress,
+  abi: evaultABI,
+  client: publicClient
+});
+
+// Vault state
+const totalBorrows = await vault.read.totalBorrows();
+const cash = await vault.read.cash();
+const totalAssets = await vault.read.totalAssets();
+
+// Utilization = totalBorrows / (totalBorrows + cash)
+const utilization = totalBorrows * 10000n / (totalBorrows + cash);
+
+// Interest rate (convert from per-second to APY)
+const ratePerSecond = await vault.read.interestRate();
+const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
+const RAY = 10n ** 27n;
+// Approximate APY: (1 + rate)^seconds - 1
+const borrowAPY = (ratePerSecond * SECONDS_PER_YEAR * 100n) / RAY;
+
+console.log(`Total Borrows: ${formatUnits(totalBorrows, 18)}`);
+console.log(`Cash: ${formatUnits(cash, 18)}`);
+console.log(`Utilization: ${utilization / 100n}%`);
+console.log(`Borrow APY: ~${borrowAPY}%`);
+
+// Account debt
+const myDebt = await vault.read.debtOf([myAccount]);
+const myDebtExact = await vault.read.debtOfExact([myAccount]);
+console.log(`My Debt: ${formatUnits(myDebt, 18)}`);
+```
+
+**TypeScript: Complete view function example:**
+
+Reference: [https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Borrowing.sol](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Borrowing.sol)
+
+### 7.4 Vault Hooks and Use Cases
 
 **Impact: MEDIUM (Enabling custom vault logic and access control)**
 
@@ -3518,7 +4108,9 @@ contract DeployVault is Script {
         // 5. Configure vault
         IEVault(vault).setInterestRateModel(irm);
         IEVault(vault).setHookConfig(address(0), 0);
-        IEVault(vault).setCaps(1000000e18, 500000e18);
+        // Caps use AmountCap uint16 encoding (0 = unlimited)
+        // See AmountCap.sol for encoding formula
+        IEVault(vault).setCaps(0, 0); // 0 = no cap
         IEVault(vault).setInterestFee(0.1e4); // 10%
         
         // 6. Configure LTV for collaterals

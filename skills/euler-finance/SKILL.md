@@ -85,6 +85,7 @@ Reference these guidelines when:
 - `adv-hooks` - Vault hooks and use cases
 - `adv-fee-flow` - Fee flow controller mechanics
 - `adv-rewards-eul` - EUL reward token distribution
+- `adv-flashloan-pulldebt` - Flash loans and debt transfer operations
 
 ### 8. Security (CRITICAL)
 

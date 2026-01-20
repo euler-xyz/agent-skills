@@ -71,6 +71,52 @@ await asset.approve(vault, requiredRepay);
 await vault.repay(requiredRepay, account);
 ```
 
+**Correct (repay with vault shares instead of underlying):**
+
+```solidity
+// repayWithShares burns your vault shares to repay debt
+// Useful when you have shares but not the underlying asset
+
+// Get current debt and share balance
+uint256 myDebt = IEVault(vault).debtOf(account);
+uint256 myShares = IEVault(vault).balanceOf(account);
+
+// Repay using shares - returns (shares burned, assets repaid)
+// amount = type(uint256).max uses all shares
+(uint256 sharesBurned, uint256 assetsRepaid) = IEVault(vault).repayWithShares(
+    type(uint256).max,  // or specific amount of assets to repay
+    account             // whose debt to repay
+);
+
+// If shares value > debt, only burns shares worth the debt
+// The conversion uses toAssetsDown for shares, toSharesUp for rounding
+```
+
+**TypeScript: repayWithShares example:**
+
+```typescript
+const vault = getContract({
+  address: vaultAddress,
+  abi: evaultABI,
+  client: walletClient
+});
+
+// Check balances
+const myDebt = await vault.read.debtOf([account]);
+const myShares = await vault.read.balanceOf([account]);
+const shareValue = await vault.read.convertToAssets([myShares]);
+
+console.log(`Debt: ${myDebt}, Shares: ${myShares}, Share Value: ${shareValue}`);
+
+// Repay with all shares (up to debt amount)
+const [sharesBurned, assetsRepaid] = await vault.write.repayWithShares([
+  MaxUint256,  // use all available shares
+  account
+]);
+
+console.log(`Burned ${sharesBurned} shares, repaid ${assetsRepaid} debt`);
+```
+
 After fully repaying:
 - The controller can be released, freeing your collateral
 - You can withdraw collateral or use it elsewhere

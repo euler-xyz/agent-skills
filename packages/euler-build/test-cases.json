@@ -609,75 +609,51 @@
   },
   {
     "ruleId": "",
-    "ruleTitle": "Understanding Risk Curators",
+    "ruleTitle": "Check Account Health Factor",
+    "type": "good",
+    "code": "// accountLiquidity returns risk-adjusted values directly from the vault\n// This is what the vault uses internally for health checks\n\n// For borrow LTV (determines if you can borrow more)\n(uint256 collateralValue, uint256 liabilityValue) = IEVault(controller).accountLiquidity(\n    account,\n    false  // liquidation = false uses borrow LTV\n);\n\n// Health = collateralValue / liabilityValue\n// If collateralValue >= liabilityValue, account is healthy for borrowing\nbool canBorrow = collateralValue >= liabilityValue;\n\n// For liquidation LTV (determines if account can be liquidated)\n(uint256 collateralValueLiq, uint256 liabilityValueLiq) = IEVault(controller).accountLiquidity(\n    account,\n    true   // liquidation = true uses liquidation LTV\n);\n\n// If collateralValueLiq < liabilityValueLiq, account is liquidatable\nbool isLiquidatable = collateralValueLiq < liabilityValueLiq;",
+    "language": "solidity",
+    "description": "using vault's accountLiquidity directly"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check Account Health Factor",
+    "type": "good",
+    "code": "const vault = getContract({\n  address: controllerAddress,\n  abi: evaultABI,\n  client: publicClient\n});\n\n// Get liquidity with borrow LTV\nconst [collateralBorrow, liabilityBorrow] = await vault.read.accountLiquidity([\n  account,\n  false  // borrow LTV\n]);\n\n// Get liquidity with liquidation LTV\nconst [collateralLiq, liabilityLiq] = await vault.read.accountLiquidity([\n  account,\n  true   // liquidation LTV\n]);\n\n// Calculate both health factors\nconst borrowHealth = liabilityBorrow > 0n \n  ? (collateralBorrow * 10n ** 18n) / liabilityBorrow \n  : MaxUint256;\n\nconst liquidationHealth = liabilityLiq > 0n\n  ? (collateralLiq * 10n ** 18n) / liabilityLiq\n  : MaxUint256;\n\nconsole.log(`Borrow Health: ${formatUnits(borrowHealth, 18)}`);\nconsole.log(`Liquidation Health: ${formatUnits(liquidationHealth, 18)}`);\n\n// Full breakdown\nconst [collaterals, values, liability] = await vault.read.accountLiquidityFull([\n  account,\n  true\n]);\n\nfor (let i = 0; i < collaterals.length; i++) {\n  console.log(`${collaterals[i]}: ${formatUnits(values[i], 18)} value`);\n}",
+    "language": "typescript",
+    "description": "detailed breakdown with accountLiquidityFull"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Check Account Health Factor",
+    "type": "good",
+    "code": "const batchItems: BatchItem[] = [\n  // Repay all debt\n  {\n    onBehalfOfAccount: account,\n    targetContract: controllerVault,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: evaultABI,\n      functionName: 'repay',\n      args: [MaxUint256, account],\n    }),\n  },\n  // Disable controller\n  {\n    onBehalfOfAccount: account,\n    targetContract: controllerVault,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: evaultABI,\n      functionName: 'disableController',\n      args: [],\n    }),\n  },\n  // Disable collateral (optional - via EVC)\n  {\n    onBehalfOfAccount: zeroAddress,\n    targetContract: evcAddress,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: evcABI,\n      functionName: 'disableCollateral',\n      args: [account, collateralVault],\n    }),\n  },\n  // Withdraw collateral\n  {\n    onBehalfOfAccount: account,\n    targetContract: collateralVault,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: evaultABI,\n      functionName: 'withdraw',\n      args: [MaxUint256, account, account],\n    }),\n  },\n];\n\nawait evc.batch(batchItems);",
+    "language": "typescript",
+    "description": "disabling controller after full repayment"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Understanding Risk Curators and Vault Governance",
     "type": "bad",
-    "code": "// WRONG: Only authorized addresses can modify vault config\nIEVault vault = IEVault(vaultAddress);\nvault.setLTV(collateral, 0.8e4, 0.9e4, 0); // Will revert!\nvault.setCaps(1000000e18, 500000e18);       // Will revert!",
+    "code": "// WRONG: Only governor can modify vault config\nIEVault vault = IEVault(vaultAddress);\nvault.setLTV(collateral, 8000, 9000, 0);  // Will revert with E_Unauthorized!\nvault.setCaps(100, 50);                    // Will revert with E_Unauthorized!\n// Note: setCaps takes uint16 AmountCap encoded values, not raw asset amounts",
     "language": "solidity",
     "description": "assuming anyone can configure vaults"
   },
   {
     "ruleId": "",
-    "ruleTitle": "Understanding Risk Curators",
-    "type": "good",
-    "code": "import {IEVault} from \"evk/EVault/IEVault.sol\";\n\nIEVault vault = IEVault(vaultAddress);\n\n// Check governance roles\naddress governorAdmin = vault.governorAdmin();     // Can change all settings\naddress feeReceiver = vault.feeReceiver();         // Receives protocol fees\n\n// Governance hierarchy in Euler:\n// 1. Governor Admin - full control over vault configuration\n// 2. Fee Receiver - receives interest fees\n// 3. Hook Target - can implement additional access control\n\n// Only governor can call these functions:\n// - setLTV(collateral, borrowLTV, liquidationLTV, rampDuration)\n// - setCaps(supplyCap, borrowCap)\n// - setInterestRateModel(irm)\n// - setInterestFee(fee)\n// - setHookConfig(hookTarget, hookedOps)\n// - setConfigFlags(flags)\n// - setGovernorAdmin(newGovernor)",
-    "language": "solidity",
-    "description": "understanding governance roles"
-  },
-  {
-    "ruleId": "",
-    "ruleTitle": "Understanding Risk Curators",
-    "type": "good",
-    "code": "import {CapRiskSteward} from \"evk-periphery/Governor/CapRiskSteward.sol\";\n\n// CapRiskSteward allows limited cap adjustments without full governance\n// This enables faster response to market conditions\n\n// Deploy risk steward with limits\nCapRiskSteward steward = new CapRiskSteward(\n    evc,\n    admin,\n    3 days,      // riskSteerCooldown: minimum time between adjustments\n    0.1e18       // riskSteerCapLimit: max 10% change per adjustment\n);\n\n// Add vault to steward management\nsteward.setRiskSteerVault(vaultAddress, true);\n\n// Steward can adjust caps within limits\nsteward.setSupplyCap(vaultAddress, newSupplyCap);\nsteward.setBorrowCap(vaultAddress, newBorrowCap);",
-    "language": "solidity",
-    "description": "implementing risk steward pattern"
-  },
-  {
-    "ruleId": "",
-    "ruleTitle": "Understanding Risk Curators",
-    "type": "good",
-    "code": "import {GovernedPerspective} from \"evk-periphery/Perspectives/deployed/GovernedPerspective.sol\";\n\n// GovernedPerspective maintains whitelist of trusted vaults\nGovernedPerspective perspective = GovernedPerspective(perspectiveAddress);\n\n// Only owner can add/remove vaults\nperspective.perspectiveVerify(vaultAddress, true);  // Add to whitelist\nperspective.perspectiveUnverify(vaultAddress);       // Remove from whitelist\n\n// Check if vault is verified (trusted)\nbool isVerified = perspective.isVerified(vaultAddress);",
-    "language": "solidity",
-    "description": "GovernedPerspective for trusted vaults"
-  },
-  {
-    "ruleId": "",
-    "ruleTitle": "Understanding Risk Curators",
-    "type": "good",
-    "code": "import { getContract } from 'viem';\n\nconst vault = getContract({\n  address: vaultAddress,\n  abi: evaultABI,\n  client: publicClient,\n});\n\n// Check who governs this vault\nconst governor = await vault.read.governorAdmin();\nconst feeReceiver = await vault.read.feeReceiver();\nconst [hookTarget, hookedOps] = await vault.read.hookConfig();\n\nconsole.log(`Governor: ${governor}`);\nconsole.log(`Fee Receiver: ${feeReceiver}`);\nconsole.log(`Hook Target: ${hookTarget}`);\n\n// Check if vault is in governed perspective (Euler-vetted)\nconst perspective = getContract({\n  address: governedPerspectiveAddress,\n  abi: perspectiveABI,\n  client: publicClient,\n});\n\nconst isEulerVerified = await perspective.read.isVerified([vaultAddress]);\nconsole.log(`Euler Verified: ${isEulerVerified}`);",
-    "language": "typescript",
-    "description": "using Guardian for emergency actions"
-  },
-  {
-    "ruleId": "",
     "ruleTitle": "How Liquidation Works on Euler",
-    "type": "bad",
-    "code": "// Liquidation is not always profitable!\n// Must check discount, gas costs, and oracle prices\nIEVault(vault).liquidate(violator, collateral, maxRepay, 0);\n// May revert or result in loss if not checked properly",
+    "type": "good",
+    "code": "import {IEVault} from \"evk/EVault/IEVault.sol\";\n\n// checkLiquidation returns (0, 0) if account is healthy\n(uint256 maxRepay, uint256 maxYield) = IEVault(vault).checkLiquidation(\n    liquidator,   // who will receive collateral\n    violator,     // unhealthy account\n    collateral    // which collateral to seize\n);\n\nif (maxRepay == 0) {\n    // Account is healthy or no liquidation available\n    return;\n}\n\n// Calculate profit\n// Repay is in debt asset terms, yield is in collateral terms\nuint256 repayValueUsd = maxRepay * debtPriceUsd / 1e18;\nuint256 yieldValueUsd = maxYield * collateralPriceUsd / 1e18;\nuint256 grossProfit = yieldValueUsd - repayValueUsd;\n\n// Account for gas, slippage, swap fees\nuint256 netProfit = grossProfit - estimatedCosts;\nrequire(netProfit > 0, \"Not profitable\");",
     "language": "solidity",
-    "description": "assuming liquidation is always profitable"
+    "description": "checking liquidation profitability"
   },
   {
     "ruleId": "",
     "ruleTitle": "How Liquidation Works on Euler",
     "type": "good",
-    "code": "// Check liquidation eligibility\nfunction checkLiquidation(\n    address vault,\n    address violator,\n    address collateral\n) public view returns (\n    bool isLiquidatable,\n    uint256 maxRepay,\n    uint256 maxYield\n) {\n    // Check health - must be below 1.0\n    address[] memory collaterals = IEVC(evc).getCollaterals(violator);\n    \n    try IEVault(vault).checkAccountStatus(violator, collaterals) {\n        // Account is healthy - cannot liquidate\n        return (false, 0, 0);\n    } catch {\n        // Account is unhealthy - check liquidation details\n    }\n    \n    // Get liquidation parameters\n    // checkLiquidation(liquidator, violator, collateral) - 3 params\n    (maxRepay, maxYield) = IEVault(vault).checkLiquidation(\n        msg.sender,  // liquidator address\n        violator,\n        collateral\n    );\n    \n    isLiquidatable = maxRepay > 0;\n}",
+    "code": "// liquidate(violator, collateral, repayAssets, minYieldBalance)\n// - violator: the unhealthy account\n// - collateral: which collateral vault to seize from\n// - repayAssets: how much debt to repay (use type(uint256).max for all)\n// - minYieldBalance: minimum collateral to receive (slippage protection)\n\n// Must have debt tokens approved\nIERC20(debtAsset).approve(vault, repayAmount);\n\n// Execute - this transfers debt from violator to liquidator,\n// and seizes collateral from violator to liquidator\nIEVault(vault).liquidate(\n    violator,\n    collateral,\n    repayAmount,\n    minYieldBalance  // revert if yield < this\n);",
     "language": "solidity",
-    "description": "checking if account is liquidatable"
-  },
-  {
-    "ruleId": "",
-    "ruleTitle": "How Liquidation Works on Euler",
-    "type": "good",
-    "code": "// Step 1: Verify liquidation is profitable\n// checkLiquidation(liquidator, violator, collateral) returns (maxRepay, maxYield)\n(uint256 maxRepay, uint256 maxYield) = IEVault(vault).checkLiquidation(\n    address(this),  // liquidator\n    violator,\n    collateral\n);\n\n// Calculate if profitable after gas\nuint256 repayValue = maxRepay * debtPrice / 1e18;\nuint256 yieldValue = maxYield * collateralPrice / 1e18;\nuint256 profit = yieldValue - repayValue;\nrequire(profit > estimatedGasCost, \"Not profitable\");\n\n// Step 2: Approve debt tokens\nIERC20(debtAsset).approve(vault, maxRepay);\n\n// Step 3: Execute liquidation via EVC's controlCollateral\n// This allows the vault to seize collateral on behalf of liquidator\nIEVC.BatchItem[] memory items = new IEVC.BatchItem[](1);\nitems[0] = IEVC.BatchItem({\n    onBehalfOfAccount: address(this),\n    targetContract: vault,\n    value: 0,\n    data: abi.encodeCall(\n        IEVault.liquidate,\n        (violator, collateral, maxRepay, 0)\n    )\n});\n\nIEVC(evc).batch(items);",
-    "language": "solidity",
-    "description": "executing a liquidation"
-  },
-  {
-    "ruleId": "",
-    "ruleTitle": "How Liquidation Works on Euler",
-    "type": "good",
-    "code": "// Use flash loan to liquidate without capital\nconst batchItems = [\n  // 1. Flash borrow the debt asset\n  {\n    onBehalfOfAccount: liquidator,\n    targetContract: flashLoanVault,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: eVaultABI,\n      functionName: 'borrow',\n      args: [repayAmount, liquidator],\n    }),\n  },\n  // 2. Execute liquidation\n  {\n    onBehalfOfAccount: liquidator,\n    targetContract: debtVault,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: eVaultABI,\n      functionName: 'liquidate',\n      args: [violator, collateralVault, repayAmount, 0],\n    }),\n  },\n  // 3. Swap seized collateral for debt asset\n  {\n    onBehalfOfAccount: liquidator,\n    targetContract: swapRouter,\n    value: 0n,\n    data: swapCalldata,\n  },\n  // 4. Repay flash loan\n  {\n    onBehalfOfAccount: liquidator,\n    targetContract: flashLoanVault,\n    value: 0n,\n    data: encodeFunctionData({\n      abi: eVaultABI,\n      functionName: 'repay',\n      args: [repayAmount, liquidator],\n    }),\n  },\n];\n\nawait evc.batch(batchItems);",
-    "language": "typescript",
-    "description": "liquidation with flash loan"
+    "description": "executing liquidation"
   },
   {
     "ruleId": "",
@@ -875,7 +851,7 @@
     "ruleId": "",
     "ruleTitle": "Creator Tools and Deployment Resources",
     "type": "good",
-    "code": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.19;\n\nimport {Script} from \"forge-std/Script.sol\";\nimport {GenericFactory} from \"evk/GenericFactory/GenericFactory.sol\";\nimport {IEVault} from \"evk/EVault/IEVault.sol\";\n\ncontract DeployVault is Script {\n    // Mainnet addresses\n    address constant EVAULT_FACTORY = 0x29a56a1b8214D9Cf7c5561811750D5cBDb45CC8e;\n    address constant KINK_IRM_FACTORY = 0xcAe0A39B45Ee9C3213f64392FA6DF30CE034C9F9;\n    address constant ORACLE_ROUTER_FACTORY = 0x70B3f6F61b7Bf237DF04589DdAA842121072326A;\n    \n    function run() external {\n        uint256 deployerKey = vm.envUint(\"PRIVATE_KEY\");\n        vm.startBroadcast(deployerKey);\n        \n        // 1. Deploy IRM\n        address irm = IKinkIRMFactory(KINK_IRM_FACTORY).deploy(\n            0,           // baseRate\n            1.585e25,    // slope1 (~5% APY at kink)\n            13.16e27,    // slope2 (~300% at 100%)\n            0.9e9        // kink (90%)\n        );\n        \n        // 2. Deploy oracle router\n        address router = IEulerRouterFactory(ORACLE_ROUTER_FACTORY).deploy(\n            msg.sender   // governor\n        );\n        \n        // 3. Configure oracle adapters\n        IEulerRouter(router).govSetConfig(\n            asset,\n            unitOfAccount,\n            oracleAdapter\n        );\n        \n        // 4. Deploy vault\n        bytes memory trailingData = abi.encodePacked(\n            asset,\n            router,\n            unitOfAccount\n        );\n        address vault = GenericFactory(EVAULT_FACTORY).createProxy(\n            address(0),  // no salt\n            true,        // upgradeable\n            trailingData\n        );\n        \n        // 5. Configure vault\n        IEVault(vault).setInterestRateModel(irm);\n        IEVault(vault).setHookConfig(address(0), 0);\n        IEVault(vault).setCaps(1000000e18, 500000e18);\n        IEVault(vault).setInterestFee(0.1e4); // 10%\n        \n        // 6. Configure LTV for collaterals\n        IEVault(vault).setLTV(\n            collateralVault,\n            0.75e4,     // 75% borrow LTV\n            0.85e4,     // 85% liquidation LTV\n            0           // no ramp\n        );\n        \n        vm.stopBroadcast();\n        \n        console.log(\"Vault deployed:\", vault);\n    }\n}",
+    "code": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.19;\n\nimport {Script} from \"forge-std/Script.sol\";\nimport {GenericFactory} from \"evk/GenericFactory/GenericFactory.sol\";\nimport {IEVault} from \"evk/EVault/IEVault.sol\";\n\ncontract DeployVault is Script {\n    // Mainnet addresses\n    address constant EVAULT_FACTORY = 0x29a56a1b8214D9Cf7c5561811750D5cBDb45CC8e;\n    address constant KINK_IRM_FACTORY = 0xcAe0A39B45Ee9C3213f64392FA6DF30CE034C9F9;\n    address constant ORACLE_ROUTER_FACTORY = 0x70B3f6F61b7Bf237DF04589DdAA842121072326A;\n    \n    function run() external {\n        uint256 deployerKey = vm.envUint(\"PRIVATE_KEY\");\n        vm.startBroadcast(deployerKey);\n        \n        // 1. Deploy IRM\n        address irm = IKinkIRMFactory(KINK_IRM_FACTORY).deploy(\n            0,           // baseRate\n            1.585e25,    // slope1 (~5% APY at kink)\n            13.16e27,    // slope2 (~300% at 100%)\n            0.9e9        // kink (90%)\n        );\n        \n        // 2. Deploy oracle router\n        address router = IEulerRouterFactory(ORACLE_ROUTER_FACTORY).deploy(\n            msg.sender   // governor\n        );\n        \n        // 3. Configure oracle adapters\n        IEulerRouter(router).govSetConfig(\n            asset,\n            unitOfAccount,\n            oracleAdapter\n        );\n        \n        // 4. Deploy vault\n        bytes memory trailingData = abi.encodePacked(\n            asset,\n            router,\n            unitOfAccount\n        );\n        address vault = GenericFactory(EVAULT_FACTORY).createProxy(\n            address(0),  // no salt\n            true,        // upgradeable\n            trailingData\n        );\n        \n        // 5. Configure vault\n        IEVault(vault).setInterestRateModel(irm);\n        IEVault(vault).setHookConfig(address(0), 0);\n        // Caps use AmountCap uint16 encoding (0 = unlimited)\n        // See AmountCap.sol for encoding formula\n        IEVault(vault).setCaps(0, 0); // 0 = no cap\n        IEVault(vault).setInterestFee(0.1e4); // 10%\n        \n        // 6. Configure LTV for collaterals\n        IEVault(vault).setLTV(\n            collateralVault,\n            0.75e4,     // 75% borrow LTV\n            0.85e4,     // 85% liquidation LTV\n            0           // no ramp\n        );\n        \n        vm.stopBroadcast();\n        \n        console.log(\"Vault deployed:\", vault);\n    }\n}",
     "language": "solidity",
     "description": "deploying vault via script"
   },
@@ -1150,5 +1126,13 @@
     "code": "// Calculate how much to repay to reach target health factor\nconst currentDebt = await vault.debtOf(account);\nconst currentHealth = await accountLens.getAccountHealth(account);\n\n// Repay enough to reach 1.5 health factor\nconst targetHealth = 1.5e18;\nconst requiredRepay = calculateRepayForHealth(\n  currentDebt,\n  currentHealth,\n  targetHealth\n);\n\nawait asset.approve(vault, requiredRepay);\nawait vault.repay(requiredRepay, account);",
     "language": "typescript",
     "description": "partial repay to improve health factor"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Repay Borrowed Debt",
+    "type": "good",
+    "code": "const vault = getContract({\n  address: vaultAddress,\n  abi: evaultABI,\n  client: walletClient\n});\n\n// Check balances\nconst myDebt = await vault.read.debtOf([account]);\nconst myShares = await vault.read.balanceOf([account]);\nconst shareValue = await vault.read.convertToAssets([myShares]);\n\nconsole.log(`Debt: ${myDebt}, Shares: ${myShares}, Share Value: ${shareValue}`);\n\n// Repay with all shares (up to debt amount)\nconst [sharesBurned, assetsRepaid] = await vault.write.repayWithShares([\n  MaxUint256,  // use all available shares\n  account\n]);\n\nconsole.log(`Burned ${sharesBurned} shares, repaid ${assetsRepaid} debt`);",
+    "language": "typescript",
+    "description": "repay with vault shares instead of underlying"
   }
 ]
