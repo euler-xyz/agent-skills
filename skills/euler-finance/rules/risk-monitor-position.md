@@ -202,4 +202,6 @@ Key practices:
 - Track price volatility of collateral assets
 - Consider setting up operator-based keepers
 
+See also: [Lens Contracts for Data Queries](tools-lens) for complete AccountLens and VaultLens documentation.
+
 Reference: [Euler Docs - Liquidation Bot](https://docs.euler.finance/creator-tools/liquidation-bot/)

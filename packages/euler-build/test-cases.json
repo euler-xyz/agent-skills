@@ -33,6 +33,22 @@
   },
   {
     "ruleId": "",
+    "ruleTitle": "Flash Loans and Debt Transfer",
+    "type": "bad",
+    "code": "// WRONG: Flash loan MUST be repaid in same transaction\ncontract BadFlashBorrower {\n    function attemptFlashLoan(address vault, uint256 amount) external {\n        IEVault(vault).flashLoan(amount, \"\");\n        // Missing repayment! This will revert with E_FlashLoanNotRepaid\n    }\n    \n    function onFlashLoan(bytes memory) external {\n        // Trying to keep the funds - WILL FAIL\n        // Vault checks balance after callback returns\n    }\n}",
+    "language": "solidity",
+    "description": "not repaying flash loan in same transaction"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Flash Loans and Debt Transfer",
+    "type": "good",
+    "code": "import {IFlashLoan} from \"evk/interfaces/IFlashLoan.sol\";\n\n// Flash loans on Euler are FREE (no fee)\n// Must implement IFlashLoan interface and repay in same tx\n\ncontract MyFlashBorrower is IFlashLoan {\n    function executeFlashLoan(address vault, uint256 amount) external {\n        // Request flash loan - vault transfers assets to this contract\n        IEVault(vault).flashLoan(amount, abi.encode(/* your data */));\n    }\n    \n    // Vault calls this after transferring assets\n    function onFlashLoan(bytes memory data) external override {\n        // Decode your data\n        // ... do arbitrage, liquidation, etc ...\n        \n        // MUST return assets to vault before function ends\n        // Vault checks: balanceOf(vault) >= originalBalance\n        IERC20(asset).transfer(msg.sender, amount);\n    }\n}",
+    "language": "solidity",
+    "description": "flash loan with proper repayment"
+  },
+  {
+    "ruleId": "",
     "ruleTitle": "Vault Hooks and Use Cases",
     "type": "bad",
     "code": "// WRONG: New vaults start with all operations disabled!\n// Hooks are enabled with hookTarget = address(0), which reverts\nIEVault vault = IEVault(newVaultAddress);\nvault.deposit(amount, receiver); // Reverts with E_OperationDisabled!",
@@ -521,6 +537,46 @@
   },
   {
     "ruleId": "",
+    "ruleTitle": "Deploy an Oracle Adapter",
+    "type": "good",
+    "code": "import {ChronicleOracle} from \"euler-price-oracle/adapter/chronicle/ChronicleOracle.sol\";\n\n// Chronicle is MakerDAO's oracle system\nChronicleOracle oracle = new ChronicleOracle(\n    base,           // Base token address\n    quote,          // Quote token address\n    feed,           // Chronicle feed address (IChronicle)\n    maxStaleness    // Max age in seconds\n);\n\n// Note: Chronicle feeds require whitelisting (kiss)\n// The adapter address must be whitelisted on the Chronicle feed\n// Contact Chronicle team for production whitelisting",
+    "language": "solidity",
+    "description": "deploy ChronicleOracle adapter"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy an Oracle Adapter",
+    "type": "good",
+    "code": "import {RedstoneCoreOracle} from \"euler-price-oracle/adapter/redstone/RedstoneCoreOracle.sol\";\n\n// RedStone provides modular, gas-optimized oracle feeds\nRedstoneCoreOracle oracle = new RedstoneCoreOracle(\n    base,                    // Base token address\n    quote,                   // Quote token address\n    feedId,                  // RedStone feed ID (bytes32)\n    feedDecimals,            // Feed decimal precision\n    maxStaleness             // Max age in seconds\n);\n\n// RedStone requires signed price payloads in calldata\n// Use RedStone SDK to wrap transactions with price data",
+    "language": "solidity",
+    "description": "deploy RedStoneOracle adapter"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy an Oracle Adapter",
+    "type": "good",
+    "code": "import {FixedRateOracle} from \"euler-price-oracle/adapter/fixed/FixedRateOracle.sol\";\n\n// For stablecoins pegged 1:1 (e.g., USDC/USD, DAI/USD)\nFixedRateOracle oracle = new FixedRateOracle(\n    base,       // Base token (e.g., USDC)\n    quote,      // Quote token (e.g., USD reference)\n    rate        // Fixed rate in 18 decimals (1e18 for 1:1)\n);\n\n// Use for:\n// - Stablecoin pairs (USDC/USDT at 1:1)\n// - Wrapped tokens (WETH/ETH at 1:1)\n// - Testing and development",
+    "language": "solidity",
+    "description": "deploy FixedRateOracle for stablecoins"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy an Oracle Adapter",
+    "type": "good",
+    "code": "import {CrossAdapter} from \"euler-price-oracle/adapter/CrossAdapter.sol\";\n\n// CrossAdapter chains two oracles through an intermediate asset\n// Example: TOKEN -> ETH -> USD (requires TOKEN/ETH and ETH/USD oracles)\n\nCrossAdapter oracle = new CrossAdapter(\n    oracleBaseCross,    // First oracle: TOKEN/ETH\n    oracleCrossQuote,   // Second oracle: ETH/USD\n    crossAsset          // Intermediate asset: ETH (WETH address)\n);\n\n// Price flow: TOKEN -> ETH (via oracleBaseCross) -> USD (via oracleCrossQuote)\n// Useful for tokens that only have ETH pairs but vault needs USD pricing\n\n// Example: Deploy cross adapter for LINK/USD via LINK/ETH and ETH/USD\nCrossAdapter linkUsdOracle = new CrossAdapter(\n    linkEthChainlinkOracle,   // LINK/ETH feed\n    ethUsdChainlinkOracle,    // ETH/USD feed  \n    weth                       // Cross through WETH\n);",
+    "language": "solidity",
+    "description": "deploy CrossAdapter for chained pricing"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy an Oracle Adapter",
+    "type": "good",
+    "code": "// TypeScript: Check if Pendle market is ready for oracle\nasync function isPendleMarketReady(\n  market: Address,\n  twapWindow: number\n): Promise<boolean> {\n  const [increaseCardinalityRequired, , oldestObservationSatisfied] = \n    await publicClient.readContract({\n      address: market,\n      abi: pendleMarketABI,\n      functionName: 'getOracleState',\n      args: [market, twapWindow]\n    });\n  \n  return !increaseCardinalityRequired && oldestObservationSatisfied;\n}\n\n// Initialize market if needed\nasync function initializePendleMarket(market: Address, cardinality: number) {\n  await walletClient.writeContract({\n    address: market,\n    abi: pendleMarketABI,\n    functionName: 'increaseObservationsCardinalityNext',\n    args: [cardinality]\n  });\n  \n  console.log(`Market initialized. Wait ${twapWindow} seconds before using oracle.`);\n}",
+    "language": "typescript",
+    "description": "deploy PendleOracle for yield-bearing tokens"
+  },
+  {
+    "ruleId": "",
     "ruleTitle": "Get Asset Prices from Oracles",
     "type": "bad",
     "code": "// Wrong: Oracles don't return \"price per token\"\nuint256 price = oracle.getPrice(token);\nuint256 value = tokenAmount * price;\n// getPrice() doesn't exist in IPriceOracle!",
@@ -905,6 +961,70 @@
   },
   {
     "ruleId": "",
+    "ruleTitle": "Lens Contracts for Data Queries",
+    "type": "bad",
+    "code": "// WRONG: Multiple calls, complex assembly, easy to miss data\nconst totalAssets = await vault.read.totalAssets();\nconst totalBorrows = await vault.read.totalBorrows();\nconst cash = await vault.read.cash();\nconst governor = await vault.read.governorAdmin();\nconst irm = await vault.read.interestRateModel();\n// ... many more calls needed",
+    "language": "typescript",
+    "description": "making many individual calls"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Lens Contracts for Data Queries",
+    "type": "good",
+    "code": "import { getContract } from 'viem';\nimport lens from '@eulerxyz/euler-interfaces/addresses/1/LensAddresses.json';\nimport vaultLensABI from '@eulerxyz/euler-interfaces/abis/VaultLens.json';\n\nconst vaultLens = getContract({\n  address: lens.vaultLens as Address,\n  abi: vaultLensABI,\n  client: publicClient\n});\n\n// Get all vault info in one call\nconst vaultInfo = await vaultLens.read.getVaultInfoFull([vaultAddress]);\n\nconsole.log(`Vault: ${vaultInfo.vaultName} (${vaultInfo.vaultSymbol})`);\nconsole.log(`Asset: ${vaultInfo.assetName} (${vaultInfo.assetDecimals} decimals)`);\nconsole.log(`Total Assets: ${vaultInfo.totalAssets}`);\nconsole.log(`Total Borrowed: ${vaultInfo.totalBorrowed}`);\nconsole.log(`Supply Cap: ${vaultInfo.supplyCap}`);\nconsole.log(`Borrow Cap: ${vaultInfo.borrowCap}`);\nconsole.log(`Governor: ${vaultInfo.governorAdmin}`);\nconsole.log(`Oracle: ${vaultInfo.oracle}`);\nconsole.log(`IRM: ${vaultInfo.interestRateModel}`);\n\n// LTV info for each collateral\nfor (const ltv of vaultInfo.collateralLTVInfo) {\n  console.log(`Collateral ${ltv.collateral}: borrow=${ltv.borrowLTV}, liq=${ltv.liquidationLTV}`);\n}",
+    "language": "typescript",
+    "description": "using VaultLens for comprehensive vault data"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Lens Contracts for Data Queries",
+    "type": "good",
+    "code": "import accountLensABI from '@eulerxyz/euler-interfaces/abis/AccountLens.json';\n\nconst accountLens = getContract({\n  address: lens.accountLens as Address,\n  abi: accountLensABI,\n  client: publicClient\n});\n\n// Get full account info for a specific vault\nconst accountInfo = await accountLens.read.getAccountInfo([account, vaultAddress]);\n\n// EVC account state\nconst evcInfo = accountInfo.evcAccountInfo;\nconsole.log(`Owner: ${evcInfo.owner}`);\nconsole.log(`Controllers: ${evcInfo.enabledControllers}`);\nconsole.log(`Collaterals: ${evcInfo.enabledCollaterals}`);\nconsole.log(`Lockdown Mode: ${evcInfo.isLockdownMode}`);\n\n// Vault position\nconst vaultInfo = accountInfo.vaultAccountInfo;\nconsole.log(`Shares: ${vaultInfo.shares}`);\nconsole.log(`Assets (deposits): ${vaultInfo.assets}`);\nconsole.log(`Borrowed: ${vaultInfo.borrowed}`);\nconsole.log(`Is Controller: ${vaultInfo.isController}`);\nconsole.log(`Is Collateral: ${vaultInfo.isCollateral}`);\n\n// Liquidity and health\nconst liq = vaultInfo.liquidityInfo;\nconsole.log(`Collateral Value (borrow): ${liq.collateralValueBorrowing}`);\nconsole.log(`Collateral Value (liq): ${liq.collateralValueLiquidation}`);\nconsole.log(`Liability Value: ${liq.liabilityValueLiquidation}`);\nconsole.log(`Time to Liquidation: ${liq.timeToLiquidation}`);",
+    "language": "typescript",
+    "description": "using AccountLens for position data"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Lens Contracts for Data Queries",
+    "type": "good",
+    "code": "// Quick health check without full account info\nconst liquidityInfo = await accountLens.read.getAccountLiquidityInfo([\n  account,\n  controllerVault\n]);\n\nif (liquidityInfo.queryFailure) {\n  console.error('Query failed:', liquidityInfo.queryFailureReason);\n  return;\n}\n\n// Calculate health factor\nconst health = liquidityInfo.liabilityValueLiquidation > 0n\n  ? (liquidityInfo.collateralValueLiquidation * 10n ** 18n) / liquidityInfo.liabilityValueLiquidation\n  : MaxUint256;\n\nconsole.log(`Health Factor: ${formatUnits(health, 18)}`);\n\n// Time to liquidation (special values)\nconst TTL_INFINITY = await accountLens.read.TTL_INFINITY();\nconst TTL_LIQUIDATION = await accountLens.read.TTL_LIQUIDATION();\n\nif (liquidityInfo.timeToLiquidation === TTL_INFINITY) {\n  console.log('Safe: Infinite time to liquidation');\n} else if (liquidityInfo.timeToLiquidation === TTL_LIQUIDATION) {\n  console.log('DANGER: Already liquidatable!');\n} else if (liquidityInfo.timeToLiquidation > 0) {\n  console.log(`Time to liquidation: ${liquidityInfo.timeToLiquidation} seconds`);\n}",
+    "language": "typescript",
+    "description": "using AccountLens for liquidity info only"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Lens Contracts for Data Queries",
+    "type": "good",
+    "code": "// Get interest rate model info with custom utilization points\nconst utilizationPoints = [\n  { cash: 90n * 10n ** 18n, borrows: 10n * 10n ** 18n },   // 10% utilization\n  { cash: 50n * 10n ** 18n, borrows: 50n * 10n ** 18n },   // 50% utilization\n  { cash: 10n * 10n ** 18n, borrows: 90n * 10n ** 18n },   // 90% utilization\n  { cash: 5n * 10n ** 18n, borrows: 95n * 10n ** 18n },    // 95% utilization\n];\n\nconst cashArray = utilizationPoints.map(p => p.cash);\nconst borrowsArray = utilizationPoints.map(p => p.borrows);\n\nconst irmInfo = await vaultLens.read.getVaultInterestRateModelInfo([\n  vaultAddress,\n  cashArray,\n  borrowsArray\n]);\n\n// Plot the interest rate curve\nfor (let i = 0; i < irmInfo.interestRateInfo.length; i++) {\n  const info = irmInfo.interestRateInfo[i];\n  const utilization = (info.borrows * 100n) / (info.cash + info.borrows);\n  console.log(`${utilization}% util: Borrow APY=${info.borrowAPY}, Supply APY=${info.supplyAPY}`);\n}\n\n// For kink IRM, get standard curve points\nconst kinkIrmInfo = await vaultLens.read.getVaultKinkInterestRateModelInfo([vaultAddress]);\nconsole.log(`IRM Type: ${kinkIrmInfo.interestRateModelInfo.interestRateModelType}`);",
+    "language": "typescript",
+    "description": "using VaultLens for IRM curve data"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Lens Contracts for Data Queries",
+    "type": "good",
+    "code": "import oracleLensABI from '@eulerxyz/euler-interfaces/abis/OracleLens.json';\n\nconst oracleLens = getContract({\n  address: lens.oracleLens as Address,\n  abi: oracleLensABI,\n  client: publicClient\n});\n\n// Get oracle info for multiple base/quote pairs\nconst bases = [wethAddress, wbtcAddress, linkAddress];\nconst quotes = [usdAddress, usdAddress, usdAddress];\n\nconst oracleInfo = await oracleLens.read.getOracleInfo([\n  routerAddress,\n  bases,\n  quotes\n]);\n\nconsole.log(`Oracle: ${oracleInfo.name}`);\nconsole.log(`Oracle Address: ${oracleInfo.oracle}`);\n// oracleInfo.oracleInfo contains encoded adapter-specific info\n\n// Check for stale pull oracles (Pyth, RedStone)\nconst isStale = await oracleLens.read.isStalePullOracle([\n  oracleAddress,\n  '0x' // failure reason bytes\n]);\n\nif (isStale) {\n  console.warn('Oracle prices are stale - update required!');\n}\n\n// Get valid oracle adapters for a pair\nconst validAdapters = await oracleLens.read.getValidAdapters([\n  baseToken,\n  quoteToken\n]);\nconsole.log('Valid adapters:', validAdapters);",
+    "language": "typescript",
+    "description": "using OracleLens for oracle validation"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Lens Contracts for Data Queries",
+    "type": "good",
+    "code": "import utilsLensABI from '@eulerxyz/euler-interfaces/abis/UtilsLens.json';\n\nconst utilsLens = getContract({\n  address: lens.utilsLens as Address,\n  abi: utilsLensABI,\n  client: publicClient\n});\n\n// Get APYs for a vault\nconst [borrowAPY, supplyAPY] = await utilsLens.read.getAPYs([vaultAddress]);\nconsole.log(`Borrow APY: ${formatUnits(borrowAPY, 25)}%`);  // 1e27 scale\nconsole.log(`Supply APY: ${formatUnits(supplyAPY, 25)}%`);\n\n// Batch token balances\nconst tokens = [wethAddress, usdcAddress, daiAddress];\nconst balances = await utilsLens.read.tokenBalances([account, tokens]);\ntokens.forEach((token, i) => {\n  console.log(`${token}: ${balances[i]}`);\n});\n\n// Batch token allowances\nconst allowances = await utilsLens.read.tokenAllowances([\n  spenderAddress,\n  account,\n  tokens\n]);\n\n// Get ERC4626 vault info (works for any 4626 vault)\nconst vaultInfo = await utilsLens.read.getVaultInfoERC4626([vaultAddress]);\nconsole.log(`Is EVault: ${vaultInfo.isEVault}`);\nconsole.log(`Share/Asset ratio: ${vaultInfo.totalAssets / vaultInfo.totalShares}`);\n\n// Calculate time to liquidation\nconst ttl = await utilsLens.read.calculateTimeToLiquidation([\n  liabilityVault,\n  liabilityValue,\n  collateralAddresses,\n  collateralValues\n]);",
+    "language": "typescript",
+    "description": "using UtilsLens for calculations"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Lens Contracts for Data Queries",
+    "type": "good",
+    "code": "import {IVaultLens} from \"euler-interfaces/interfaces/IVaultLens.sol\";\nimport {IAccountLens} from \"euler-interfaces/interfaces/IAccountLens.sol\";\n\ncontract MyContract {\n    IVaultLens public vaultLens;\n    IAccountLens public accountLens;\n    \n    constructor(address _vaultLens, address _accountLens) {\n        vaultLens = IVaultLens(_vaultLens);\n        accountLens = IAccountLens(_accountLens);\n    }\n    \n    function getAccountHealth(address account, address vault) \n        external \n        view \n        returns (uint256 health) \n    {\n        IAccountLens.AccountLiquidityInfo memory liq = \n            accountLens.getAccountLiquidityInfo(account, vault);\n        \n        if (liq.queryFailure) revert(\"Query failed\");\n        if (liq.liabilityValueLiquidation == 0) return type(uint256).max;\n        \n        health = (liq.collateralValueLiquidation * 1e18) / liq.liabilityValueLiquidation;\n    }\n    \n    function getVaultUtilization(address vault) \n        external \n        view \n        returns (uint256 utilization) \n    {\n        IVaultLens.VaultInfoDynamic memory info = \n            vaultLens.getVaultInfoDynamic(vault);\n        \n        uint256 total = info.totalCash + info.totalBorrowed;\n        if (total == 0) return 0;\n        \n        utilization = (info.totalBorrowed * 1e18) / total;\n    }\n}",
+    "language": "solidity",
+    "description": "using EulerEarnVaultLens for yield strategies"
+  },
+  {
+    "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "bad",
     "code": "// WRONG: Fetching all vault positions on-chain is expensive and slow\nconst allVaults = await factory.read.getAllProxies();\nfor (const vault of allVaults) {\n  const info = await vault.read.getVaultInfo(); // Many RPC calls!\n}",
@@ -1091,8 +1211,8 @@
     "ruleId": "",
     "ruleTitle": "Get Vault APY and Interest Rates",
     "type": "good",
-    "code": "// Constants for APY calculation\nuint256 constant SECONDS_PER_YEAR = 365.2425 days;\nuint256 constant ONE = 1e27; // RAY precision\n\n// Convert per-second rate to APY using compound interest formula\n// APY = (1 + SPY)^SECONDS_PER_YEAR - 1\nfunction calculateAPY(uint256 borrowSPY) public pure returns (uint256) {\n    // Use RPow for precise exponentiation\n    uint256 compounded = RPow.rpow(ONE + borrowSPY, SECONDS_PER_YEAR, ONE);\n    return compounded - ONE;\n}\n\n// For supply APY, account for utilization and interest fee\nfunction calculateSupplyAPY(\n    uint256 borrowSPY,\n    uint256 totalCash,\n    uint256 totalBorrows,\n    uint256 interestFee\n) public pure returns (uint256) {\n    uint256 borrowAPY = calculateAPY(borrowSPY);\n    uint256 totalAssets = totalCash + totalBorrows;\n    if (totalAssets == 0) return 0;\n    \n    uint256 utilization = (totalBorrows * ONE) / totalAssets;\n    uint256 feeAdjusted = borrowAPY * (1e4 - interestFee) / 1e4;\n    return (feeAdjusted * utilization) / ONE;\n}",
-    "language": "solidity",
+    "code": "// UtilsLens provides a simpler API for just APY data\nconst [borrowAPY, supplyAPY] = await utilsLens.read.getAPYs([vaultAddress]);\nconsole.log(`Borrow APY: ${formatUnits(borrowAPY, 25)}%`);\nconsole.log(`Supply APY: ${formatUnits(supplyAPY, 25)}%`);",
+    "language": "typescript",
     "description": "calculating APY from SPY manually in Solidity"
   },
   {

@@ -9,7 +9,24 @@ tags: flashloan, pulldebt, debt, transfer, arbitrage
 
 Euler vaults support flash loans (borrow and repay in same transaction) and debt transfer (pullDebt to take on another account's debt).
 
-**Flash Loan Basics:**
+**Incorrect (not repaying flash loan in same transaction):**
+
+```solidity
+// WRONG: Flash loan MUST be repaid in same transaction
+contract BadFlashBorrower {
+    function attemptFlashLoan(address vault, uint256 amount) external {
+        IEVault(vault).flashLoan(amount, "");
+        // Missing repayment! This will revert with E_FlashLoanNotRepaid
+    }
+    
+    function onFlashLoan(bytes memory) external {
+        // Trying to keep the funds - WILL FAIL
+        // Vault checks balance after callback returns
+    }
+}
+```
+
+**Correct (flash loan with proper repayment):**
 
 ```solidity
 import {IFlashLoan} from "evk/interfaces/IFlashLoan.sol";

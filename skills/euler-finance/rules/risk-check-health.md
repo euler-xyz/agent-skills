@@ -346,4 +346,6 @@ Key concepts:
 - `accountLiquidity(account, true)` = liquidation LTV values
 - Call `disableController()` after full repayment to release position
 
+See also: [Lens Contracts](tools-lens) - AccountLens provides `getAccountLiquidityInfo()` and `getTimeToLiquidation()` for comprehensive health monitoring.
+
 Reference: [EVK Risk Manager Module](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/RiskManager.sol)

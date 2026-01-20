@@ -55,6 +55,7 @@ Comprehensive guide for interacting with Euler Finance V2 protocol. Covers vault
    - 9.1 [Contract Addresses and ABIs](#91-contract-addresses-and-abis)
    - 9.2 [Creator Tools and Deployment Resources](#92-creator-tools-and-deployment-resources)
    - 9.3 [Data Querying with Subgraphs](#93-data-querying-with-subgraphs)
+   - 9.4 [Lens Contracts for Data Queries](#94-lens-contracts-for-data-queries)
 10. [EulerEarn](#10-eulerearn) — **MEDIUM**
    - 10.1 [Create an EulerEarn Vault](#101-create-an-eulerearn-vault)
    - 10.2 [Manage EulerEarn Strategies](#102-manage-eulerearn-strategies)
@@ -407,37 +408,18 @@ console.log(`Borrow APY: ${borrowAPY / 1e25}%`);
 
 **Correct: calculating APY from SPY manually in Solidity**
 
-```solidity
-// Constants for APY calculation
-uint256 constant SECONDS_PER_YEAR = 365.2425 days;
-uint256 constant ONE = 1e27; // RAY precision
-
-// Convert per-second rate to APY using compound interest formula
-// APY = (1 + SPY)^SECONDS_PER_YEAR - 1
-function calculateAPY(uint256 borrowSPY) public pure returns (uint256) {
-    // Use RPow for precise exponentiation
-    uint256 compounded = RPow.rpow(ONE + borrowSPY, SECONDS_PER_YEAR, ONE);
-    return compounded - ONE;
-}
-
-// For supply APY, account for utilization and interest fee
-function calculateSupplyAPY(
-    uint256 borrowSPY,
-    uint256 totalCash,
-    uint256 totalBorrows,
-    uint256 interestFee
-) public pure returns (uint256) {
-    uint256 borrowAPY = calculateAPY(borrowSPY);
-    uint256 totalAssets = totalCash + totalBorrows;
-    if (totalAssets == 0) return 0;
-    
-    uint256 utilization = (totalBorrows * ONE) / totalAssets;
-    uint256 feeAdjusted = borrowAPY * (1e4 - interestFee) / 1e4;
-    return (feeAdjusted * utilization) / ONE;
-}
+```typescript
+// UtilsLens provides a simpler API for just APY data
+const [borrowAPY, supplyAPY] = await utilsLens.read.getAPYs([vaultAddress]);
+console.log(`Borrow APY: ${formatUnits(borrowAPY, 25)}%`);
+console.log(`Supply APY: ${formatUnits(supplyAPY, 25)}%`);
 ```
 
 The VaultLens approach is preferred as it handles edge cases and provides additional useful data like collateral LTV info, oracle prices, and IRM parameters.
+
+**Alternative: Using UtilsLens for quick APY queries**
+
+See also: [Lens Contracts for Data Queries](tools-lens) for comprehensive Lens documentation.
 
 Reference: [https://github.com/euler-xyz/evk-periphery/blob/master/src/Lens/VaultLens.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/Lens/VaultLens.sol)
 
@@ -1375,6 +1357,8 @@ Key concepts:
 
 - Call `disableController()` after full repayment to release position
 
+See also: [Lens Contracts](tools-lens) - AccountLens provides `getAccountLiquidityInfo()` and `getTimeToLiquidation()` for comprehensive health monitoring.
+
 Reference: [https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/RiskManager.sol](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/RiskManager.sol)
 
 ### 3.2 How Liquidation Works on Euler
@@ -1887,6 +1871,8 @@ Key practices:
 - Track price volatility of collateral assets
 
 - Consider setting up operator-based keepers
+
+See also: [Lens Contracts for Data Queries](tools-lens) for complete AccountLens and VaultLens documentation.
 
 Reference: [https://docs.euler.finance/creator-tools/liquidation-bot/](https://docs.euler.finance/creator-tools/liquidation-bot/)
 
@@ -2434,21 +2420,146 @@ RateProviderOracle rateOracle = new RateProviderOracle(
 );
 ```
 
+**Correct: deploy ChronicleOracle adapter**
+
+```solidity
+import {ChronicleOracle} from "euler-price-oracle/adapter/chronicle/ChronicleOracle.sol";
+
+// Chronicle is MakerDAO's oracle system
+ChronicleOracle oracle = new ChronicleOracle(
+    base,           // Base token address
+    quote,          // Quote token address
+    feed,           // Chronicle feed address (IChronicle)
+    maxStaleness    // Max age in seconds
+);
+
+// Note: Chronicle feeds require whitelisting (kiss)
+// The adapter address must be whitelisted on the Chronicle feed
+// Contact Chronicle team for production whitelisting
+```
+
+**Correct: deploy RedStoneOracle adapter**
+
+```solidity
+import {RedstoneCoreOracle} from "euler-price-oracle/adapter/redstone/RedstoneCoreOracle.sol";
+
+// RedStone provides modular, gas-optimized oracle feeds
+RedstoneCoreOracle oracle = new RedstoneCoreOracle(
+    base,                    // Base token address
+    quote,                   // Quote token address
+    feedId,                  // RedStone feed ID (bytes32)
+    feedDecimals,            // Feed decimal precision
+    maxStaleness             // Max age in seconds
+);
+
+// RedStone requires signed price payloads in calldata
+// Use RedStone SDK to wrap transactions with price data
+```
+
+**Correct: deploy FixedRateOracle for stablecoins**
+
+```solidity
+import {FixedRateOracle} from "euler-price-oracle/adapter/fixed/FixedRateOracle.sol";
+
+// For stablecoins pegged 1:1 (e.g., USDC/USD, DAI/USD)
+FixedRateOracle oracle = new FixedRateOracle(
+    base,       // Base token (e.g., USDC)
+    quote,      // Quote token (e.g., USD reference)
+    rate        // Fixed rate in 18 decimals (1e18 for 1:1)
+);
+
+// Use for:
+// - Stablecoin pairs (USDC/USDT at 1:1)
+// - Wrapped tokens (WETH/ETH at 1:1)
+// - Testing and development
+```
+
+**Correct: deploy CrossAdapter for chained pricing**
+
+```solidity
+import {CrossAdapter} from "euler-price-oracle/adapter/CrossAdapter.sol";
+
+// CrossAdapter chains two oracles through an intermediate asset
+// Example: TOKEN -> ETH -> USD (requires TOKEN/ETH and ETH/USD oracles)
+
+CrossAdapter oracle = new CrossAdapter(
+    oracleBaseCross,    // First oracle: TOKEN/ETH
+    oracleCrossQuote,   // Second oracle: ETH/USD
+    crossAsset          // Intermediate asset: ETH (WETH address)
+);
+
+// Price flow: TOKEN -> ETH (via oracleBaseCross) -> USD (via oracleCrossQuote)
+// Useful for tokens that only have ETH pairs but vault needs USD pricing
+
+// Example: Deploy cross adapter for LINK/USD via LINK/ETH and ETH/USD
+CrossAdapter linkUsdOracle = new CrossAdapter(
+    linkEthChainlinkOracle,   // LINK/ETH feed
+    ethUsdChainlinkOracle,    // ETH/USD feed  
+    weth                       // Cross through WETH
+);
+```
+
+**Correct: deploy PendleOracle for yield-bearing tokens**
+
+```typescript
+// TypeScript: Check if Pendle market is ready for oracle
+async function isPendleMarketReady(
+  market: Address,
+  twapWindow: number
+): Promise<boolean> {
+  const [increaseCardinalityRequired, , oldestObservationSatisfied] = 
+    await publicClient.readContract({
+      address: market,
+      abi: pendleMarketABI,
+      functionName: 'getOracleState',
+      args: [market, twapWindow]
+    });
+  
+  return !increaseCardinalityRequired && oldestObservationSatisfied;
+}
+
+// Initialize market if needed
+async function initializePendleMarket(market: Address, cardinality: number) {
+  await walletClient.writeContract({
+    address: market,
+    abi: pendleMarketABI,
+    functionName: 'increaseObservationsCardinalityNext',
+    args: [cardinality]
+  });
+  
+  console.log(`Market initialized. Wait ${twapWindow} seconds before using oracle.`);
+}
+```
+
+**IMPORTANT: Pendle Market Initialization Required**
+
+Pendle markets must be initialized before the oracle can return prices:
+
 **Oracle Adapter Selection Guide:**
 
 | Use Case | Recommended Adapter | Configuration |
 
 |----------|-------------------|---------------|
 
-| Major pairs (ETH/USD) | ChainlinkOracle | 1-4 hour staleness |
+| Major pairs (ETH/USD, BTC/USD) | ChainlinkOracle | 1-4 hour staleness |
 
-| DeFi tokens | UniswapV3Oracle | 15-30 min TWAP |
+| DeFi tokens with liquidity | UniswapV3Oracle | 15-30 min TWAP |
 
-| LSTs (stETH, rETH) | LidoOracle / RateProviderOracle | N/A |
+| LSTs (wstETH, rETH, cbETH) | LidoOracle / RateProviderOracle | Exchange rate based |
 
-| New/exotic pairs | PythOracle | With confidence checks |
+| New/exotic tokens | PythOracle | Pull-based, requires updates |
 
-| Stablecoins | FixedRateOracle | 1:1 rate |
+| MakerDAO ecosystem | ChronicleOracle | Requires whitelisting |
+
+| Gas-optimized feeds | RedStoneOracle | Calldata-based pricing |
+
+| Stablecoins (USDC, USDT) | FixedRateOracle | 1:1 rate |
+
+| Cross-currency pricing | CrossAdapter | Chain through intermediate |
+
+| Pendle PT/LP tokens | PendleOracle | Market TWAP |
+
+| Wrapped tokens (WETH/ETH) | FixedRateOracle | 1:1 rate |
 
 **Verification after deployment:**
 
@@ -2624,6 +2735,8 @@ Key points:
 - Cross-pricing works automatically through EulerRouter
 
 - **Pyth oracles require price updates before any operation that uses them**
+
+See also: [Lens Contracts](tools-lens) - OracleLens for oracle validation and checking stale pull oracles.
 
 Reference: [https://github.com/euler-xyz/euler-price-oracle#iprice oracle](https://github.com/euler-xyz/euler-price-oracle#iprice oracle)
 
@@ -3245,7 +3358,24 @@ Reference: [https://github.com/euler-xyz/evk-periphery/blob/master/src/FeeFlow/F
 
 Euler vaults support flash loans (borrow and repay in same transaction) and debt transfer (pullDebt to take on another account's debt).
 
-**Flash Loan Basics:**
+**Incorrect: not repaying flash loan in same transaction**
+
+```solidity
+// WRONG: Flash loan MUST be repaid in same transaction
+contract BadFlashBorrower {
+    function attemptFlashLoan(address vault, uint256 amount) external {
+        IEVault(vault).flashLoan(amount, "");
+        // Missing repayment! This will revert with E_FlashLoanNotRepaid
+    }
+    
+    function onFlashLoan(bytes memory) external {
+        // Trying to keep the funds - WILL FAIL
+        // Vault checks balance after callback returns
+    }
+}
+```
+
+**Correct: flash loan with proper repayment**
 
 ```solidity
 import {IFlashLoan} from "evk/interfaces/IFlashLoan.sol";
@@ -4545,6 +4675,345 @@ for (const vault of topVaults.eulerVaults) {
 
 Reference: [https://github.com/euler-xyz/euler-subgraph](https://github.com/euler-xyz/euler-subgraph)
 
+### 9.4 Lens Contracts for Data Queries
+
+**Impact: MEDIUM (Essential for reading comprehensive vault and account data)**
+
+Lens contracts provide read-only aggregated views of Euler protocol data. They simplify complex multi-call queries into single function calls, returning structured data about vaults, accounts, oracles, and interest rate models.
+
+**Available Lens Contracts:**
+
+| Lens | Purpose |
+
+|------|---------|
+
+| AccountLens | Account positions, liquidity, health, time to liquidation |
+
+| VaultLens | Vault configuration, state, LTVs, rewards |
+
+| OracleLens | Oracle configuration and validation |
+
+| IRMLens | Interest rate model parameters |
+
+| UtilsLens | APY calculations, token balances, price queries |
+
+| EulerEarnVaultLens | EulerEarn vault strategies and allocations |
+
+**Incorrect: making many individual calls**
+
+```typescript
+// WRONG: Multiple calls, complex assembly, easy to miss data
+const totalAssets = await vault.read.totalAssets();
+const totalBorrows = await vault.read.totalBorrows();
+const cash = await vault.read.cash();
+const governor = await vault.read.governorAdmin();
+const irm = await vault.read.interestRateModel();
+// ... many more calls needed
+```
+
+**Correct: using VaultLens for comprehensive vault data**
+
+```typescript
+import { getContract } from 'viem';
+import lens from '@eulerxyz/euler-interfaces/addresses/1/LensAddresses.json';
+import vaultLensABI from '@eulerxyz/euler-interfaces/abis/VaultLens.json';
+
+const vaultLens = getContract({
+  address: lens.vaultLens as Address,
+  abi: vaultLensABI,
+  client: publicClient
+});
+
+// Get all vault info in one call
+const vaultInfo = await vaultLens.read.getVaultInfoFull([vaultAddress]);
+
+console.log(`Vault: ${vaultInfo.vaultName} (${vaultInfo.vaultSymbol})`);
+console.log(`Asset: ${vaultInfo.assetName} (${vaultInfo.assetDecimals} decimals)`);
+console.log(`Total Assets: ${vaultInfo.totalAssets}`);
+console.log(`Total Borrowed: ${vaultInfo.totalBorrowed}`);
+console.log(`Supply Cap: ${vaultInfo.supplyCap}`);
+console.log(`Borrow Cap: ${vaultInfo.borrowCap}`);
+console.log(`Governor: ${vaultInfo.governorAdmin}`);
+console.log(`Oracle: ${vaultInfo.oracle}`);
+console.log(`IRM: ${vaultInfo.interestRateModel}`);
+
+// LTV info for each collateral
+for (const ltv of vaultInfo.collateralLTVInfo) {
+  console.log(`Collateral ${ltv.collateral}: borrow=${ltv.borrowLTV}, liq=${ltv.liquidationLTV}`);
+}
+```
+
+**Correct: using AccountLens for position data**
+
+```typescript
+import accountLensABI from '@eulerxyz/euler-interfaces/abis/AccountLens.json';
+
+const accountLens = getContract({
+  address: lens.accountLens as Address,
+  abi: accountLensABI,
+  client: publicClient
+});
+
+// Get full account info for a specific vault
+const accountInfo = await accountLens.read.getAccountInfo([account, vaultAddress]);
+
+// EVC account state
+const evcInfo = accountInfo.evcAccountInfo;
+console.log(`Owner: ${evcInfo.owner}`);
+console.log(`Controllers: ${evcInfo.enabledControllers}`);
+console.log(`Collaterals: ${evcInfo.enabledCollaterals}`);
+console.log(`Lockdown Mode: ${evcInfo.isLockdownMode}`);
+
+// Vault position
+const vaultInfo = accountInfo.vaultAccountInfo;
+console.log(`Shares: ${vaultInfo.shares}`);
+console.log(`Assets (deposits): ${vaultInfo.assets}`);
+console.log(`Borrowed: ${vaultInfo.borrowed}`);
+console.log(`Is Controller: ${vaultInfo.isController}`);
+console.log(`Is Collateral: ${vaultInfo.isCollateral}`);
+
+// Liquidity and health
+const liq = vaultInfo.liquidityInfo;
+console.log(`Collateral Value (borrow): ${liq.collateralValueBorrowing}`);
+console.log(`Collateral Value (liq): ${liq.collateralValueLiquidation}`);
+console.log(`Liability Value: ${liq.liabilityValueLiquidation}`);
+console.log(`Time to Liquidation: ${liq.timeToLiquidation}`);
+```
+
+**Correct: using AccountLens for liquidity info only**
+
+```typescript
+// Quick health check without full account info
+const liquidityInfo = await accountLens.read.getAccountLiquidityInfo([
+  account,
+  controllerVault
+]);
+
+if (liquidityInfo.queryFailure) {
+  console.error('Query failed:', liquidityInfo.queryFailureReason);
+  return;
+}
+
+// Calculate health factor
+const health = liquidityInfo.liabilityValueLiquidation > 0n
+  ? (liquidityInfo.collateralValueLiquidation * 10n ** 18n) / liquidityInfo.liabilityValueLiquidation
+  : MaxUint256;
+
+console.log(`Health Factor: ${formatUnits(health, 18)}`);
+
+// Time to liquidation (special values)
+const TTL_INFINITY = await accountLens.read.TTL_INFINITY();
+const TTL_LIQUIDATION = await accountLens.read.TTL_LIQUIDATION();
+
+if (liquidityInfo.timeToLiquidation === TTL_INFINITY) {
+  console.log('Safe: Infinite time to liquidation');
+} else if (liquidityInfo.timeToLiquidation === TTL_LIQUIDATION) {
+  console.log('DANGER: Already liquidatable!');
+} else if (liquidityInfo.timeToLiquidation > 0) {
+  console.log(`Time to liquidation: ${liquidityInfo.timeToLiquidation} seconds`);
+}
+```
+
+**Correct: using VaultLens for IRM curve data**
+
+```typescript
+// Get interest rate model info with custom utilization points
+const utilizationPoints = [
+  { cash: 90n * 10n ** 18n, borrows: 10n * 10n ** 18n },   // 10% utilization
+  { cash: 50n * 10n ** 18n, borrows: 50n * 10n ** 18n },   // 50% utilization
+  { cash: 10n * 10n ** 18n, borrows: 90n * 10n ** 18n },   // 90% utilization
+  { cash: 5n * 10n ** 18n, borrows: 95n * 10n ** 18n },    // 95% utilization
+];
+
+const cashArray = utilizationPoints.map(p => p.cash);
+const borrowsArray = utilizationPoints.map(p => p.borrows);
+
+const irmInfo = await vaultLens.read.getVaultInterestRateModelInfo([
+  vaultAddress,
+  cashArray,
+  borrowsArray
+]);
+
+// Plot the interest rate curve
+for (let i = 0; i < irmInfo.interestRateInfo.length; i++) {
+  const info = irmInfo.interestRateInfo[i];
+  const utilization = (info.borrows * 100n) / (info.cash + info.borrows);
+  console.log(`${utilization}% util: Borrow APY=${info.borrowAPY}, Supply APY=${info.supplyAPY}`);
+}
+
+// For kink IRM, get standard curve points
+const kinkIrmInfo = await vaultLens.read.getVaultKinkInterestRateModelInfo([vaultAddress]);
+console.log(`IRM Type: ${kinkIrmInfo.interestRateModelInfo.interestRateModelType}`);
+```
+
+**Correct: using OracleLens for oracle validation**
+
+```typescript
+import oracleLensABI from '@eulerxyz/euler-interfaces/abis/OracleLens.json';
+
+const oracleLens = getContract({
+  address: lens.oracleLens as Address,
+  abi: oracleLensABI,
+  client: publicClient
+});
+
+// Get oracle info for multiple base/quote pairs
+const bases = [wethAddress, wbtcAddress, linkAddress];
+const quotes = [usdAddress, usdAddress, usdAddress];
+
+const oracleInfo = await oracleLens.read.getOracleInfo([
+  routerAddress,
+  bases,
+  quotes
+]);
+
+console.log(`Oracle: ${oracleInfo.name}`);
+console.log(`Oracle Address: ${oracleInfo.oracle}`);
+// oracleInfo.oracleInfo contains encoded adapter-specific info
+
+// Check for stale pull oracles (Pyth, RedStone)
+const isStale = await oracleLens.read.isStalePullOracle([
+  oracleAddress,
+  '0x' // failure reason bytes
+]);
+
+if (isStale) {
+  console.warn('Oracle prices are stale - update required!');
+}
+
+// Get valid oracle adapters for a pair
+const validAdapters = await oracleLens.read.getValidAdapters([
+  baseToken,
+  quoteToken
+]);
+console.log('Valid adapters:', validAdapters);
+```
+
+**Correct: using UtilsLens for calculations**
+
+```typescript
+import utilsLensABI from '@eulerxyz/euler-interfaces/abis/UtilsLens.json';
+
+const utilsLens = getContract({
+  address: lens.utilsLens as Address,
+  abi: utilsLensABI,
+  client: publicClient
+});
+
+// Get APYs for a vault
+const [borrowAPY, supplyAPY] = await utilsLens.read.getAPYs([vaultAddress]);
+console.log(`Borrow APY: ${formatUnits(borrowAPY, 25)}%`);  // 1e27 scale
+console.log(`Supply APY: ${formatUnits(supplyAPY, 25)}%`);
+
+// Batch token balances
+const tokens = [wethAddress, usdcAddress, daiAddress];
+const balances = await utilsLens.read.tokenBalances([account, tokens]);
+tokens.forEach((token, i) => {
+  console.log(`${token}: ${balances[i]}`);
+});
+
+// Batch token allowances
+const allowances = await utilsLens.read.tokenAllowances([
+  spenderAddress,
+  account,
+  tokens
+]);
+
+// Get ERC4626 vault info (works for any 4626 vault)
+const vaultInfo = await utilsLens.read.getVaultInfoERC4626([vaultAddress]);
+console.log(`Is EVault: ${vaultInfo.isEVault}`);
+console.log(`Share/Asset ratio: ${vaultInfo.totalAssets / vaultInfo.totalShares}`);
+
+// Calculate time to liquidation
+const ttl = await utilsLens.read.calculateTimeToLiquidation([
+  liabilityVault,
+  liabilityValue,
+  collateralAddresses,
+  collateralValues
+]);
+```
+
+**Correct: using EulerEarnVaultLens for yield strategies**
+
+```solidity
+import {IVaultLens} from "euler-interfaces/interfaces/IVaultLens.sol";
+import {IAccountLens} from "euler-interfaces/interfaces/IAccountLens.sol";
+
+contract MyContract {
+    IVaultLens public vaultLens;
+    IAccountLens public accountLens;
+    
+    constructor(address _vaultLens, address _accountLens) {
+        vaultLens = IVaultLens(_vaultLens);
+        accountLens = IAccountLens(_accountLens);
+    }
+    
+    function getAccountHealth(address account, address vault) 
+        external 
+        view 
+        returns (uint256 health) 
+    {
+        IAccountLens.AccountLiquidityInfo memory liq = 
+            accountLens.getAccountLiquidityInfo(account, vault);
+        
+        if (liq.queryFailure) revert("Query failed");
+        if (liq.liabilityValueLiquidation == 0) return type(uint256).max;
+        
+        health = (liq.collateralValueLiquidation * 1e18) / liq.liabilityValueLiquidation;
+    }
+    
+    function getVaultUtilization(address vault) 
+        external 
+        view 
+        returns (uint256 utilization) 
+    {
+        IVaultLens.VaultInfoDynamic memory info = 
+            vaultLens.getVaultInfoDynamic(vault);
+        
+        uint256 total = info.totalCash + info.totalBorrowed;
+        if (total == 0) return 0;
+        
+        utilization = (info.totalBorrowed * 1e18) / total;
+    }
+}
+```
+
+**Solidity: Using Lens contracts on-chain:**
+
+**Key Lens Functions Summary:**
+
+| Lens | Function | Returns |
+
+|------|----------|---------|
+
+| VaultLens | `getVaultInfoFull(vault)` | Complete vault config + state |
+
+| VaultLens | `getVaultInfoDynamic(vault)` | Current state only |
+
+| VaultLens | `getVaultInfoStatic(vault)` | Immutable config only |
+
+| VaultLens | `getRecognizedCollateralsLTVInfo(vault)` | LTV for all collaterals |
+
+| VaultLens | `getVaultKinkInterestRateModelInfo(vault)` | IRM curve data |
+
+| AccountLens | `getAccountInfo(account, vault)` | Full account position |
+
+| AccountLens | `getAccountLiquidityInfo(account, vault)` | Health and liquidation info |
+
+| AccountLens | `getTimeToLiquidation(account, vault)` | Seconds until liquidatable |
+
+| OracleLens | `getOracleInfo(oracle, bases, quotes)` | Oracle configuration |
+
+| OracleLens | `isStalePullOracle(oracle, reason)` | Check for stale Pyth/RedStone |
+
+| UtilsLens | `getAPYs(vault)` | Current borrow/supply APY |
+
+| UtilsLens | `tokenBalances(account, tokens)` | Batch balance query |
+
+| EulerEarnLens | `getVaultInfoFull(vault)` | Earn vault with strategies |
+
+Reference: [https://github.com/euler-xyz/evk-periphery/tree/master/src/Lens](https://github.com/euler-xyz/evk-periphery/tree/master/src/Lens)
+
 ---
 
 ## 10. EulerEarn
@@ -4935,6 +5404,8 @@ Key considerations:
 - Monitor strategy APYs and adjust allocations
 
 - Keep some allocation in liquid/idle vault for withdrawals
+
+See also: [Lens Contracts](tools-lens) - EulerEarnVaultLens provides `getVaultInfoFull()` to query all strategies and their allocations.
 
 Reference: [https://github.com/euler-xyz/euler-earn#roles](https://github.com/euler-xyz/euler-earn#roles)
 

@@ -95,6 +95,7 @@ Reference these guidelines when:
 
 - `tools-creator` - Creator tools and deployment resources
 - `tools-interfaces` - Contract addresses and ABIs
+- `tools-lens` - Lens contracts for data queries
 - `tools-subgraphs` - Data querying with subgraphs
 
 ### 10. EulerEarn (MEDIUM)

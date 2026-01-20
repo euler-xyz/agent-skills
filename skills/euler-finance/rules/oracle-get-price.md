@@ -187,4 +187,6 @@ Key points:
 - Cross-pricing works automatically through EulerRouter
 - **Pyth oracles require price updates before any operation that uses them**
 
+See also: [Lens Contracts](tools-lens) - OracleLens for oracle validation and checking stale pull oracles.
+
 Reference: [IPriceOracle Interface](https://github.com/euler-xyz/euler-price-oracle#iprice oracle)

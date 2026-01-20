@@ -77,4 +77,15 @@ function calculateSupplyAPY(
 
 The VaultLens approach is preferred as it handles edge cases and provides additional useful data like collateral LTV info, oracle prices, and IRM parameters.
 
+**Alternative: Using UtilsLens for quick APY queries**
+
+```typescript
+// UtilsLens provides a simpler API for just APY data
+const [borrowAPY, supplyAPY] = await utilsLens.read.getAPYs([vaultAddress]);
+console.log(`Borrow APY: ${formatUnits(borrowAPY, 25)}%`);
+console.log(`Supply APY: ${formatUnits(supplyAPY, 25)}%`);
+```
+
+See also: [Lens Contracts for Data Queries](tools-lens) for comprehensive Lens documentation.
+
 Reference: [VaultLens.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/Lens/VaultLens.sol)

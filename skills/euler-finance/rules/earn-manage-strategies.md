@@ -214,4 +214,6 @@ Key considerations:
 - Monitor strategy APYs and adjust allocations
 - Keep some allocation in liquid/idle vault for withdrawals
 
+See also: [Lens Contracts](tools-lens) - EulerEarnVaultLens provides `getVaultInfoFull()` to query all strategies and their allocations.
+
 Reference: [EulerEarn Roles](https://github.com/euler-xyz/euler-earn#roles)
