@@ -49,13 +49,20 @@ Developer tools and data access guide. Covers Lens contracts, subgraphs, contrac
 Install all skills:
 
 ```bash
-npx add-skill euler-xyz/agent-skills
+npx add-skill euler-xyz/agent-skills --skill euler-finance --skill euler-irm-oracles --skill euler-swap --skill euler-earn --skill euler-advanced --skill euler-lens-data
 ```
 
-Install specific skills:
+Install specific skill(s):
 
 ```bash
+npx add-skill euler-xyz/agent-skills --skill euler-finance
 npx add-skill euler-xyz/agent-skills --skill euler-finance --skill euler-irm-oracles
+```
+
+Interactive selection (prompts you to choose):
+
+```bash
+npx add-skill euler-xyz/agent-skills
 ```
 
 List available skills:
@@ -63,6 +70,14 @@ List available skills:
 ```bash
 npx add-skill euler-xyz/agent-skills --list
 ```
+
+**Skill guide:**
+- `euler-finance` - Core operations (start here)
+- `euler-irm-oracles` - Oracle adapters and Interest Rate Models
+- `euler-swap` - EulerSwap AMM integration
+- `euler-earn` - Yield aggregation vaults
+- `euler-advanced` - Hooks, flash loans, fee flow, rewards
+- `euler-lens-data` - Lens contracts, subgraphs, developer tools
 
 Or clone the repository directly:
 
