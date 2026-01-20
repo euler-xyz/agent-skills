@@ -27,7 +27,7 @@ Features:
 Best for: Non-technical users, quick prototyping
 ```
 
-### 2. Oracle Deployer (Objective Labs)
+### 2. Oracle Deployer
 
 Tool for deploying and managing price oracles for Euler markets.
 

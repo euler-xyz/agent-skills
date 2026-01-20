@@ -92,6 +92,62 @@ for (const collateral of ltvList) {
 }
 ```
 
+**Market Design Patterns:**
+
+Euler's modular architecture enables various market structures. Choose based on capital efficiency vs risk isolation tradeoffs:
+
+| Design | Description | Similar To | Capital Efficiency | Risk Isolation |
+|--------|-------------|------------|-------------------|----------------|
+| Simple collateral-debt pairs | One collateral vault, one borrow vault | Morpho, FraxLend, Kashi | Low | High |
+| Rehypothecation pairs | Both vaults lend and serve as collateral for each other | Silo, Fluid | Medium | Medium |
+| Multiple collaterals | Many collateral vaults borrow from one lending vault | Compound | Medium-High | Medium |
+| Cross-collateralised clusters | Multiple vaults all lend and collateralize each other | Aave | High | Low |
+| Fully customisable | Any configuration, including vaults from existing markets | Unique to Euler | Variable | Variable |
+
+```solidity
+// Example: Simple isolated pair (Morpho-style)
+// - WETH vault holds collateral in escrow only
+// - USDC vault is the lending/borrowing vault
+// - WETH vault has no borrowing enabled
+
+// Example: Rehypothecation pair (Silo-style)  
+// - WETH vault: accepts USDC as collateral, lends WETH
+// - USDC vault: accepts WETH as collateral, lends USDC
+// - Assets earn yield while backing loans
+
+// Example: Cross-collateralised cluster (Aave-style)
+// - WETH, WBTC, USDC, DAI vaults all interconnected
+// - Each can lend and serve as collateral for others
+// - Higher contagion risk if one vault defaults
+```
+
+**Creating Custom Markets:**
+
+```solidity
+// Vaults can accept collateral from ANY existing vault
+// This enables composability with the broader Euler ecosystem
+
+// Step 1: Deploy your vault
+address myVault = EVaultFactory.createProxy(
+    asset,
+    false,  // not upgradeable
+    ""      // no trailing data
+);
+
+// Step 2: Configure to accept existing vault shares as collateral
+IEVault(myVault).setLTV(
+    existingPopularVault,  // e.g., an established USDC vault
+    0.85e4,                // 85% borrow LTV
+    0.90e4,                // 90% liquidation LTV
+    0                      // ramp duration
+);
+
+// Now users with deposits in existingPopularVault
+// can borrow from your new vault without moving funds!
+```
+
 This modular design allows for permissionless market creation - anyone can deploy a vault with custom parameters while the EVC provides the security layer for cross-vault interactions.
 
-Reference: [EVK Whitepaper](https://github.com/euler-xyz/euler-vault-kit/blob/master/docs/whitepaper.md)
+References:
+- [Euler Markets Documentation](https://docs.euler.finance/concepts/core/markets)
+- [EVK Whitepaper](https://github.com/euler-xyz/euler-vault-kit/blob/master/docs/whitepaper.md)

@@ -140,6 +140,6 @@ const isEulerVerified = await perspective.read.isVerified([vaultAddress]);
 console.log(`Euler Verified: ${isEulerVerified}`);
 ```
 
-When integrating with Euler, prefer vaults verified in `GovernedPerspective` as they have been reviewed by Euler's risk team.
+When integrating with Euler, prefer vaults verified in `GovernedPerspective` as they have been reviewed by Euler to be not malicious however risk assesement must be done by the Curator and assesed by individual user for their appetite. 
 
 Reference: [CapRiskSteward.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/Governor/CapRiskSteward.sol)

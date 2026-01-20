@@ -435,7 +435,7 @@
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
-    "code": "import {EulerRouter} from \"euler-price-oracle/EulerRouter.sol\";\nimport {EulerRouterFactory} from \"evk-periphery/EulerRouterFactory/EulerRouterFactory.sol\";\n\n// Deploy router via factory (for verification by perspectives)\naddress router = EulerRouterFactory(factory).deploy(governor);\n\n// Configure pricing for asset pairs\nEulerRouter eulerRouter = EulerRouter(router);\n\n// Set direct oracle for ETH/USD\neulerRouter.govSetConfig(\n    weth,                    // Base asset\n    usd,                     // Quote asset  \n    chainlinkEthUsdOracle    // Oracle adapter address\n);\n\n// Set direct oracle for BTC/USD\neulerRouter.govSetConfig(\n    wbtc,\n    usd,\n    chainlinkBtcUsdOracle\n);",
+    "code": "import {EulerRouter} from \"euler-price-oracle/EulerRouter.sol\";\nimport {EulerRouterFactory} from \"evk-periphery/EulerRouterFactory/EulerRouterFactory.sol\";\n\n// Deploy router via factory (requires EVC address)\naddress router = EulerRouterFactory(factory).deploy(evc, governor);\n\n// Configure pricing for asset pairs\nEulerRouter eulerRouter = EulerRouter(router);\n\n// Set direct oracle for ETH/USD\n// Note: Assets are lexicographically sorted internally\neulerRouter.govSetConfig(\n    weth,                    // Base asset\n    usd,                     // Quote asset  \n    chainlinkEthUsdOracle    // Oracle adapter address\n);\n\n// Set direct oracle for BTC/USD\neulerRouter.govSetConfig(\n    wbtc,\n    usd,\n    chainlinkBtcUsdOracle\n);",
     "language": "solidity",
     "description": "deploy and configure EulerRouter"
   },
@@ -443,15 +443,15 @@
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
-    "code": "// For TOKEN/USD when only TOKEN/ETH and ETH/USD exist\n// Router automatically chains: TOKEN -> ETH -> USD\n\n// Step 1: Configure TOKEN/ETH oracle\neulerRouter.govSetConfig(\n    tokenAddress,\n    weth,\n    tokenEthOracle  // e.g., Uniswap V3 TWAP\n);\n\n// Step 2: Configure ETH/USD oracle (if not already set)\neulerRouter.govSetConfig(\n    weth,\n    usd,\n    chainlinkEthUsdOracle\n);\n\n// Now TOKEN/USD queries work automatically via cross-pricing\n// Router will query TOKEN/ETH, then ETH/USD, and multiply\nuint256 tokenUsdPrice = eulerRouter.getQuote(1e18, tokenAddress, usd);",
+    "code": "// IMPORTANT: EulerRouter does NOT automatically chain oracles!\n// For TOKEN/USD pricing, you must EITHER:\n// 1. Configure a direct TOKEN/USD oracle, OR\n// 2. Use a CrossAdapter that handles the cross-pricing internally\n\n// Resolution order in resolveOracle():\n// 1. base == quote? Return inAmount (same asset)\n// 2. Direct oracle configured for base/quote? Use it\n// 3. Base is a resolved ERC4626 vault? Convert via convertToAssets, recurse\n// 4. Fallback oracle set? Use it\n// 5. Revert with PriceOracle_NotSupported\n\n// Example: If you need TOKEN/USD via TOKEN/ETH and ETH/USD,\n// use a CrossAdapter, not multiple govSetConfig calls\nimport {CrossAdapter} from \"euler-price-oracle/adapter/CrossAdapter.sol\";\n\n// Deploy cross adapter that chains TOKEN/ETH -> ETH/USD\naddress crossAdapter = new CrossAdapter(\n    tokenEthOracle,   // First oracle: TOKEN/ETH\n    ethUsdOracle,     // Second oracle: ETH/USD\n    weth              // Cross asset (intermediate)\n);\n\n// Configure router with the cross adapter\neulerRouter.govSetConfig(tokenAddress, usd, crossAdapter);",
     "language": "solidity",
-    "description": "cross-pricing through intermediary"
+    "description": "understanding resolution - NO automatic cross-pricing"
   },
   {
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
-    "code": "// For pricing vault shares in terms of underlying\n// Router uses convertToAssets() for accurate share valuation\n\n// Configure underlying asset pricing\neulerRouter.govSetConfig(\n    underlyingAsset,\n    usd,\n    underlyingOracle\n);\n\n// Enable vault share resolution (special handling)\neulerRouter.govSetResolvedVault(\n    vaultAddress,\n    true  // Enable automatic share->asset conversion\n);\n\n// Now queries for vault shares work:\n// vaultShares -> underlying -> USD\nuint256 shareValueUsd = eulerRouter.getQuote(1e18, vaultAddress, usd);",
+    "code": "// For pricing vault shares in terms of underlying\n// Router uses convertToAssets() for automatic share->asset conversion\n\n// Configure underlying asset pricing first\neulerRouter.govSetConfig(\n    underlyingAsset,\n    usd,\n    underlyingOracle\n);\n\n// Enable vault share resolution\n// Router will call vault.convertToAssets() and recurse\neulerRouter.govSetResolvedVault(\n    vaultAddress,\n    true  // Enable automatic share->asset conversion\n);\n\n// To disable later:\neulerRouter.govSetResolvedVault(vaultAddress, false);\n\n// Now queries for vault shares work:\n// vaultShares -> convertToAssets -> underlying -> USD\nuint256 shareValueUsd = eulerRouter.getQuote(1e18, vaultAddress, usd);\n\n// IMPORTANT: Verify vault's convertToAssets is secure before configuring!\n// Per ERC4626 spec, convert* ignores liquidity, fees, slippage\n// The reported price may not be realizable through redeem/withdraw",
     "language": "solidity",
     "description": "ERC-4626 vault share pricing"
   },
@@ -459,7 +459,7 @@
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
-    "code": "import { encodeFunctionData } from 'viem';\n\n// Batch configure multiple oracle routes\nconst configItems = [\n  { base: WETH, quote: USD, oracle: chainlinkEthUsd },\n  { base: WBTC, quote: USD, oracle: chainlinkBtcUsd },\n  { base: LINK, quote: ETH, oracle: uniswapLinkEth },\n  { base: UNI, quote: ETH, oracle: uniswapUniEth },\n];\n\nconst batchCalls = configItems.map(({ base, quote, oracle }) =>\n  encodeFunctionData({\n    abi: eulerRouterABI,\n    functionName: 'govSetConfig',\n    args: [base, quote, oracle],\n  })\n);\n\n// Execute via governor or multisig\nawait governor.executeBatch(router, batchCalls);",
+    "code": "import { encodeFunctionData, getContract } from 'viem';\n\nconst eulerRouter = getContract({\n  address: routerAddress,\n  abi: eulerRouterABI,\n  client: walletClient\n});\n\n// Configure oracle for asset pair\n// Note: gov functions require being called by governor via EVC context\nawait eulerRouter.write.govSetConfig([\n  wethAddress,        // base\n  usdAddress,         // quote  \n  chainlinkOracle     // oracle adapter\n]);\n\n// Configure resolved vault for share pricing\nawait eulerRouter.write.govSetResolvedVault([\n  vaultAddress,\n  true  // set = true to enable, false to disable\n]);\n\n// Query prices\nconst quote = await eulerRouter.read.getQuote([\n  parseEther('1'),    // inAmount\n  wethAddress,        // base\n  usdAddress          // quote\n]);\n\n// Get bid/ask quotes\nconst [bid, ask] = await eulerRouter.read.getQuotes([\n  parseEther('1'),\n  wethAddress,\n  usdAddress\n]);\n\n// Check configured oracle for a pair\nconst oracle = await eulerRouter.read.getConfiguredOracle([\n  wethAddress,\n  usdAddress\n]);",
     "language": "typescript",
     "description": "TypeScript router configuration"
   },
@@ -467,9 +467,17 @@
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
-    "code": "// Set fallback oracle for unregistered pairs\n// Useful for broad coverage with specific overrides\neulerRouter.govSetFallbackOracle(fallbackOracleAddress);\n\n// Query resolution order:\n// 1. Direct config for base/quote pair\n// 2. Cross-pricing via configured intermediaries\n// 3. Fallback oracle (if set)",
+    "code": "// Set fallback oracle for pairs without direct config\n// Called when no direct oracle AND base is not a resolved vault\neulerRouter.govSetFallbackOracle(fallbackOracleAddress);\n\n// To remove fallback:\neulerRouter.govSetFallbackOracle(address(0));\n\n// Resolution order:\n// 1. base == quote → return inAmount\n// 2. Direct config for base/quote → use configured oracle\n// 3. Base is resolved vault → convertToAssets, recurse with asset\n// 4. Fallback oracle exists → use fallback\n// 5. No fallback → revert PriceOracle_NotSupported(base, quote)",
     "language": "solidity",
     "description": "fallback configuration"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Configure EulerRouter for Price Resolution",
+    "type": "good",
+    "code": "// Get configured oracle for a pair\n// Returns address(0) if not configured\naddress oracle = eulerRouter.getConfiguredOracle(base, quote);\n\n// Check if vault is configured for resolved pricing\naddress asset = eulerRouter.resolvedVaults(vaultAddress);\nbool isResolved = asset != address(0);\n\n// Get current fallback oracle\naddress fallback = eulerRouter.fallbackOracle();\n\n// Simulate full resolution path\n(uint256 resolvedAmount, address resolvedBase, address resolvedQuote, address resolvedOracle) = \n    eulerRouter.resolveOracle(inAmount, base, quote);",
+    "language": "solidity",
+    "description": "querying existing configuration"
   },
   {
     "ruleId": "",
@@ -931,7 +939,7 @@
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
-    "code": "// Subgraph endpoints (as of 2025)\nconst SUBGRAPH_URLS = {\n  1: 'https://api.studio.thegraph.com/query/[id]/euler-v2-mainnet/version/latest',\n  42161: 'https://api.studio.thegraph.com/query/[id]/euler-v2-arbitrum/version/latest',\n  8453: 'https://api.studio.thegraph.com/query/[id]/euler-v2-base/version/latest',\n};\n\n// Check docs.euler.finance for current endpoints",
+    "code": "// Subgraphs are deployed via Goldsky\n// Check docs.euler.finance for current endpoint URLs\n\n// Supported networks (as of 2025):\n// mainnet, arbitrum, base, swell, sonic, ink, unichain, avalanche,\n// berachain, bob, bsc, worldchain, hyperevm, optimism, gnosis,\n// tac, linea, plasma, mantle, monad",
     "language": "typescript",
     "description": "using Subgraph for aggregated data"
   },
@@ -939,7 +947,7 @@
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
-    "code": "# Get all vaults with their configuration\nquery GetVaults {\n  vaults(first: 100, orderBy: totalSupplyAssets, orderDirection: desc) {\n    id\n    address\n    asset {\n      address\n      symbol\n      decimals\n    }\n    totalSupplyAssets\n    totalSupplyShares\n    totalBorrowAssets\n    totalBorrowShares\n    interestRate\n    interestFee\n    oracle\n    unitOfAccount\n    governorAdmin\n    supplyCap\n    borrowCap\n    createdAt\n    lastInterestAccrual\n  }\n}",
+    "code": "# Get all vaults with their configuration\nquery GetVaults {\n  eulerVaults(first: 100, orderBy: blockTimestamp, orderDirection: desc) {\n    id\n    evault\n    name\n    symbol\n    asset\n    decimals\n    supplyCap\n    borrowCap\n    interestFee\n    oracle\n    unitOfAccount\n    governonAdmin\n    feeReceiver\n    creator\n    interestRateModel\n    collaterals\n    perspectives\n    blockTimestamp\n  }\n}",
     "language": "graphql",
     "description": "querying vault data"
   },
@@ -947,15 +955,23 @@
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
-    "code": "# Get all positions for an account\nquery GetAccountPositions($account: String!) {\n  account(id: $account) {\n    id\n    positions {\n      vault {\n        address\n        asset {\n          symbol\n        }\n      }\n      supplyShares\n      supplyAssets\n      borrowShares\n      borrowAssets\n      enabledAsCollateral\n    }\n    controllers {\n      vault {\n        address\n      }\n    }\n  }\n}",
+    "code": "# Get vault status with TVL and rates\nquery GetVaultStatus($vault: Bytes!) {\n  vaultStatuses(\n    where: { vault: $vault }\n    orderBy: timestamp\n    orderDirection: desc\n    first: 1\n  ) {\n    id\n    vault\n    totalShares\n    totalBorrows\n    cash\n    accumulatedFees\n    interestAccumulator\n    interestRate\n    supplyApy\n    borrowApy\n    timestamp\n    blockTimestamp\n  }\n}",
     "language": "graphql",
-    "description": "querying account positions"
+    "description": "querying vault status/state"
   },
   {
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
-    "code": "import { request, gql } from 'graphql-request';\n\nconst SUBGRAPH_URL = 'https://api.studio.thegraph.com/query/[id]/euler-v2-mainnet/version/latest';\n\n// Query vault information\nconst getVaultInfo = async (vaultAddress: string) => {\n  const query = gql`\n    query GetVault($id: ID!) {\n      vault(id: $id) {\n        id\n        address\n        asset {\n          address\n          symbol\n          decimals\n        }\n        totalSupplyAssets\n        totalBorrowAssets\n        interestRate\n        supplyCap\n        borrowCap\n        collaterals {\n          collateral {\n            address\n            asset {\n              symbol\n            }\n          }\n          borrowLTV\n          liquidationLTV\n        }\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { id: vaultAddress.toLowerCase() });\n};\n\n// Query top vaults by TVL\nconst getTopVaults = async (limit: number = 10) => {\n  const query = gql`\n    query GetTopVaults($first: Int!) {\n      vaults(first: $first, orderBy: totalSupplyAssets, orderDirection: desc) {\n        id\n        address\n        asset {\n          symbol\n        }\n        totalSupplyAssets\n        totalBorrowAssets\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { first: limit });\n};\n\n// Query user positions\nconst getUserPositions = async (account: string) => {\n  const query = gql`\n    query GetUserPositions($account: ID!) {\n      account(id: $account) {\n        positions(where: { supplyShares_gt: \"0\" }) {\n          vault {\n            address\n            asset {\n              symbol\n              decimals\n            }\n          }\n          supplyAssets\n          borrowAssets\n        }\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { account: account.toLowerCase() });\n};\n\n// Query historical APY\nconst getHistoricalAPY = async (vault: string, days: number = 30) => {\n  const since = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60);\n  \n  const query = gql`\n    query GetAPYHistory($vault: String!, $since: BigInt!) {\n      vaultSnapshots(\n        where: { vault: $vault, timestamp_gte: $since }\n        orderBy: timestamp\n        first: 1000\n      ) {\n        timestamp\n        interestRate\n        utilization\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { \n    vault: vault.toLowerCase(), \n    since: since.toString() \n  });\n};",
+    "code": "# Get all positions for an account\n# Note: Account entity only has id, subAccount, owner\n# Use TrackingVaultBalance for position data\nquery GetAccountPositions($mainAddress: Bytes!) {\n  trackingVaultBalances(where: { mainAddress: $mainAddress }) {\n    id\n    vault\n    mainAddress\n    account\n    balance\n    debt\n    isControllerEnabled\n    blockTimestamp\n  }\n}",
+    "language": "graphql",
+    "description": "querying account balances via TrackingVaultBalance"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Data Querying with Subgraphs",
+    "type": "good",
+    "code": "import { request, gql } from 'graphql-request';\n\n// Get current endpoint from docs.euler.finance\nconst SUBGRAPH_URL = 'https://api.goldsky.com/api/public/.../euler-mainnet/gn';\n\n// Query vault information\nconst getVaultInfo = async (vaultAddress: string) => {\n  const query = gql`\n    query GetVault($id: Bytes!) {\n      eulerVault(id: $id) {\n        id\n        evault\n        name\n        symbol\n        asset\n        decimals\n        supplyCap\n        borrowCap\n        interestFee\n        oracle\n        unitOfAccount\n        collaterals\n        governonAdmin\n        feeReceiver\n        creator\n        blockTimestamp\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { id: vaultAddress.toLowerCase() });\n};\n\n// Query vault current state\nconst getVaultStatus = async (vaultAddress: string) => {\n  const query = gql`\n    query GetVaultStatus($vault: Bytes!) {\n      vaultStatuses(\n        where: { vault: $vault }\n        orderBy: timestamp\n        orderDirection: desc\n        first: 1\n      ) {\n        totalShares\n        totalBorrows\n        cash\n        interestRate\n        supplyApy\n        borrowApy\n        timestamp\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { vault: vaultAddress.toLowerCase() });\n};\n\n// Query user positions\nconst getUserPositions = async (account: string) => {\n  const query = gql`\n    query GetUserPositions($mainAddress: Bytes!) {\n      trackingVaultBalances(\n        where: { mainAddress: $mainAddress, balance_gt: \"0\" }\n      ) {\n        vault\n        balance\n        debt\n        isControllerEnabled\n        blockTimestamp\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { mainAddress: account.toLowerCase() });\n};\n\n// Query historical APY\nconst getHistoricalAPY = async (vault: string, days: number = 30) => {\n  const since = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60);\n  \n  const query = gql`\n    query GetAPYHistory($vault: Bytes!, $since: BigInt!) {\n      vaultStatuses(\n        where: { vault: $vault, timestamp_gte: $since }\n        orderBy: timestamp\n        first: 1000\n      ) {\n        timestamp\n        interestRate\n        supplyApy\n        borrowApy\n        totalShares\n        totalBorrows\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { \n    vault: vault.toLowerCase(), \n    since: since.toString() \n  });\n};",
     "language": "typescript",
     "description": "querying interest rate history"
   },
@@ -963,9 +979,25 @@
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
-    "code": "# Get recent liquidations\nquery GetLiquidations($since: BigInt!) {\n  liquidations(\n    where: { timestamp_gte: $since }\n    orderBy: timestamp\n    orderDirection: desc\n    first: 100\n  ) {\n    id\n    timestamp\n    liquidator\n    violator\n    vault {\n      address\n      asset {\n        symbol\n      }\n    }\n    collateralVault {\n      address\n      asset {\n        symbol\n      }\n    }\n    repayAssets\n    yieldBalance\n  }\n}",
+    "code": "# Get recent liquidations\nquery GetLiquidations($since: BigInt!) {\n  liquidates(\n    where: { blockTimestamp_gte: $since }\n    orderBy: blockTimestamp\n    orderDirection: desc\n    first: 100\n  ) {\n    id\n    blockTimestamp\n    liquidator\n    violator\n    vault\n    collateral\n    repayAssets\n    yieldBalance\n    transactionHash\n  }\n}",
     "language": "graphql",
     "description": "querying liquidation events"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Data Querying with Subgraphs",
+    "type": "good",
+    "code": "# Get deposit events\nquery GetDeposits($vault: Bytes!, $since: BigInt!) {\n  deposits(\n    where: { vault: $vault, blockTimestamp_gte: $since }\n    orderBy: blockTimestamp\n    orderDirection: desc\n  ) {\n    id\n    sender\n    owner\n    assets\n    shares\n    vault\n    blockTimestamp\n    transactionHash\n  }\n}\n\n# Get withdrawal events\nquery GetWithdrawals($vault: Bytes!, $since: BigInt!) {\n  withdraws(\n    where: { vault: $vault, blockTimestamp_gte: $since }\n    orderBy: blockTimestamp\n    orderDirection: desc\n  ) {\n    id\n    sender\n    receiver\n    owner\n    assets\n    shares\n    vault\n    blockTimestamp\n    transactionHash\n  }\n}",
+    "language": "graphql",
+    "description": "querying deposits and withdrawals"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Data Querying with Subgraphs",
+    "type": "good",
+    "code": "# Get Euler Earn aggregator vaults\nquery GetEulerEarnVaults {\n  eulerEarnVaults(first: 100) {\n    id\n    name\n    symbol\n    asset\n    owner\n    curator\n    guardian\n    feeReceiver\n    performanceFee\n    timelock\n    totalShares\n    totalAssets\n    totalAllocated\n    supplyQueue\n    blockTimestamp\n  }\n}",
+    "language": "graphql",
+    "description": "querying Euler Earn vaults"
   },
   {
     "ruleId": "",

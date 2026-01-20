@@ -7,7 +7,7 @@ tags: oracle, router, configuration, governance
 
 ## Configure EulerRouter for Price Resolution
 
-EulerRouter is the central price resolution contract that routes price queries to appropriate oracle adapters. It supports direct pricing, cross-pricing through intermediaries, and ERC-4626 vault share pricing.
+EulerRouter is the central price resolution contract that routes price queries to appropriate oracle adapters. It supports direct pricing and ERC-4626 vault share pricing via `convertToAssets`.
 
 **Incorrect (hardcoding oracle in vault):**
 
@@ -24,13 +24,14 @@ IEVault(vault).setOracle(specificOracleAdapter);
 import {EulerRouter} from "euler-price-oracle/EulerRouter.sol";
 import {EulerRouterFactory} from "evk-periphery/EulerRouterFactory/EulerRouterFactory.sol";
 
-// Deploy router via factory (for verification by perspectives)
-address router = EulerRouterFactory(factory).deploy(governor);
+// Deploy router via factory (requires EVC address)
+address router = EulerRouterFactory(factory).deploy(evc, governor);
 
 // Configure pricing for asset pairs
 EulerRouter eulerRouter = EulerRouter(router);
 
 // Set direct oracle for ETH/USD
+// Note: Assets are lexicographically sorted internally
 eulerRouter.govSetConfig(
     weth,                    // Base asset
     usd,                     // Quote asset  
@@ -45,102 +46,167 @@ eulerRouter.govSetConfig(
 );
 ```
 
-**Correct (cross-pricing through intermediary):**
+**Correct (understanding resolution - NO automatic cross-pricing):**
 
 ```solidity
-// For TOKEN/USD when only TOKEN/ETH and ETH/USD exist
-// Router automatically chains: TOKEN -> ETH -> USD
+// IMPORTANT: EulerRouter does NOT automatically chain oracles!
+// For TOKEN/USD pricing, you must EITHER:
+// 1. Configure a direct TOKEN/USD oracle, OR
+// 2. Use a CrossAdapter that handles the cross-pricing internally
 
-// Step 1: Configure TOKEN/ETH oracle
-eulerRouter.govSetConfig(
-    tokenAddress,
-    weth,
-    tokenEthOracle  // e.g., Uniswap V3 TWAP
+// Resolution order in resolveOracle():
+// 1. base == quote? Return inAmount (same asset)
+// 2. Direct oracle configured for base/quote? Use it
+// 3. Base is a resolved ERC4626 vault? Convert via convertToAssets, recurse
+// 4. Fallback oracle set? Use it
+// 5. Revert with PriceOracle_NotSupported
+
+// Example: If you need TOKEN/USD via TOKEN/ETH and ETH/USD,
+// use a CrossAdapter, not multiple govSetConfig calls
+import {CrossAdapter} from "euler-price-oracle/adapter/CrossAdapter.sol";
+
+// Deploy cross adapter that chains TOKEN/ETH -> ETH/USD
+address crossAdapter = new CrossAdapter(
+    tokenEthOracle,   // First oracle: TOKEN/ETH
+    ethUsdOracle,     // Second oracle: ETH/USD
+    weth              // Cross asset (intermediate)
 );
 
-// Step 2: Configure ETH/USD oracle (if not already set)
-eulerRouter.govSetConfig(
-    weth,
-    usd,
-    chainlinkEthUsdOracle
-);
-
-// Now TOKEN/USD queries work automatically via cross-pricing
-// Router will query TOKEN/ETH, then ETH/USD, and multiply
-uint256 tokenUsdPrice = eulerRouter.getQuote(1e18, tokenAddress, usd);
+// Configure router with the cross adapter
+eulerRouter.govSetConfig(tokenAddress, usd, crossAdapter);
 ```
 
 **Correct (ERC-4626 vault share pricing):**
 
 ```solidity
 // For pricing vault shares in terms of underlying
-// Router uses convertToAssets() for accurate share valuation
+// Router uses convertToAssets() for automatic share->asset conversion
 
-// Configure underlying asset pricing
+// Configure underlying asset pricing first
 eulerRouter.govSetConfig(
     underlyingAsset,
     usd,
     underlyingOracle
 );
 
-// Enable vault share resolution (special handling)
+// Enable vault share resolution
+// Router will call vault.convertToAssets() and recurse
 eulerRouter.govSetResolvedVault(
     vaultAddress,
     true  // Enable automatic share->asset conversion
 );
 
+// To disable later:
+eulerRouter.govSetResolvedVault(vaultAddress, false);
+
 // Now queries for vault shares work:
-// vaultShares -> underlying -> USD
+// vaultShares -> convertToAssets -> underlying -> USD
 uint256 shareValueUsd = eulerRouter.getQuote(1e18, vaultAddress, usd);
+
+// IMPORTANT: Verify vault's convertToAssets is secure before configuring!
+// Per ERC4626 spec, convert* ignores liquidity, fees, slippage
+// The reported price may not be realizable through redeem/withdraw
 ```
 
 **Correct (TypeScript router configuration):**
 
 ```typescript
-import { encodeFunctionData } from 'viem';
+import { encodeFunctionData, getContract } from 'viem';
 
-// Batch configure multiple oracle routes
-const configItems = [
-  { base: WETH, quote: USD, oracle: chainlinkEthUsd },
-  { base: WBTC, quote: USD, oracle: chainlinkBtcUsd },
-  { base: LINK, quote: ETH, oracle: uniswapLinkEth },
-  { base: UNI, quote: ETH, oracle: uniswapUniEth },
-];
+const eulerRouter = getContract({
+  address: routerAddress,
+  abi: eulerRouterABI,
+  client: walletClient
+});
 
-const batchCalls = configItems.map(({ base, quote, oracle }) =>
-  encodeFunctionData({
-    abi: eulerRouterABI,
-    functionName: 'govSetConfig',
-    args: [base, quote, oracle],
-  })
-);
+// Configure oracle for asset pair
+// Note: gov functions require being called by governor via EVC context
+await eulerRouter.write.govSetConfig([
+  wethAddress,        // base
+  usdAddress,         // quote  
+  chainlinkOracle     // oracle adapter
+]);
 
-// Execute via governor or multisig
-await governor.executeBatch(router, batchCalls);
+// Configure resolved vault for share pricing
+await eulerRouter.write.govSetResolvedVault([
+  vaultAddress,
+  true  // set = true to enable, false to disable
+]);
+
+// Query prices
+const quote = await eulerRouter.read.getQuote([
+  parseEther('1'),    // inAmount
+  wethAddress,        // base
+  usdAddress          // quote
+]);
+
+// Get bid/ask quotes
+const [bid, ask] = await eulerRouter.read.getQuotes([
+  parseEther('1'),
+  wethAddress,
+  usdAddress
+]);
+
+// Check configured oracle for a pair
+const oracle = await eulerRouter.read.getConfiguredOracle([
+  wethAddress,
+  usdAddress
+]);
 ```
 
 **Correct (fallback configuration):**
 
 ```solidity
-// Set fallback oracle for unregistered pairs
-// Useful for broad coverage with specific overrides
+// Set fallback oracle for pairs without direct config
+// Called when no direct oracle AND base is not a resolved vault
 eulerRouter.govSetFallbackOracle(fallbackOracleAddress);
 
-// Query resolution order:
-// 1. Direct config for base/quote pair
-// 2. Cross-pricing via configured intermediaries
-// 3. Fallback oracle (if set)
+// To remove fallback:
+eulerRouter.govSetFallbackOracle(address(0));
+
+// Resolution order:
+// 1. base == quote → return inAmount
+// 2. Direct config for base/quote → use configured oracle
+// 3. Base is resolved vault → convertToAssets, recurse with asset
+// 4. Fallback oracle exists → use fallback
+// 5. No fallback → revert PriceOracle_NotSupported(base, quote)
+```
+
+**Correct (querying existing configuration):**
+
+```solidity
+// Get configured oracle for a pair
+// Returns address(0) if not configured
+address oracle = eulerRouter.getConfiguredOracle(base, quote);
+
+// Check if vault is configured for resolved pricing
+address asset = eulerRouter.resolvedVaults(vaultAddress);
+bool isResolved = asset != address(0);
+
+// Get current fallback oracle
+address fallback = eulerRouter.fallbackOracle();
+
+// Simulate full resolution path
+(uint256 resolvedAmount, address resolvedBase, address resolvedQuote, address resolvedOracle) = 
+    eulerRouter.resolveOracle(inAmount, base, quote);
 ```
 
 **Important considerations:**
 
 ```solidity
+// Gov functions have onlyEVCAccountOwner and onlyGovernor modifiers
+// Must be called by governor, typically via EVC context
+
 // Finalize router to make immutable (optional)
 eulerRouter.transferGovernance(address(0));
 // WARNING: No more configuration changes possible after this!
 
 // For upgradeable setups, use a timelock or multisig as governor
 // This allows fixing oracle issues without vault redeployment
+
+// Assets are lexicographically sorted internally in the mapping
+// govSetConfig(A, B, oracle) and govSetConfig(B, A, oracle) 
+// configure the same pair - order doesn't matter for callers
 ```
 
-Reference: [Euler Price Oracle - EulerRouter](https://github.com/euler-xyz/euler-price-oracle#eulerrouter)
+Reference: [EulerRouter Source](https://github.com/euler-xyz/euler-price-oracle/blob/master/src/EulerRouter.sol)

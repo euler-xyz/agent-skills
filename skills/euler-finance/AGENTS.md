@@ -1695,7 +1695,7 @@ console.log(`Euler Verified: ${isEulerVerified}`);
 
 **TypeScript: Checking vault governance:**
 
-When integrating with Euler, prefer vaults verified in `GovernedPerspective` as they have been reviewed by Euler's risk team.
+When integrating with Euler, prefer vaults verified in `GovernedPerspective` as they have been reviewed by Euler to be not malicious however risk assesement must be done by the Curator and assesed by individual user for their appetite. 
 
 Reference: [https://github.com/euler-xyz/evk-periphery/blob/master/src/Governor/CapRiskSteward.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/Governor/CapRiskSteward.sol)
 
@@ -1711,7 +1711,7 @@ Price oracle adapters and configuration for Euler vaults. Covers deploying oracl
 
 **Impact: HIGH (Central oracle routing for vault pricing)**
 
-EulerRouter is the central price resolution contract that routes price queries to appropriate oracle adapters. It supports direct pricing, cross-pricing through intermediaries, and ERC-4626 vault share pricing.
+EulerRouter is the central price resolution contract that routes price queries to appropriate oracle adapters. It supports direct pricing and ERC-4626 vault share pricing via `convertToAssets`.
 
 **Incorrect: hardcoding oracle in vault**
 
@@ -1728,13 +1728,14 @@ IEVault(vault).setOracle(specificOracleAdapter);
 import {EulerRouter} from "euler-price-oracle/EulerRouter.sol";
 import {EulerRouterFactory} from "evk-periphery/EulerRouterFactory/EulerRouterFactory.sol";
 
-// Deploy router via factory (for verification by perspectives)
-address router = EulerRouterFactory(factory).deploy(governor);
+// Deploy router via factory (requires EVC address)
+address router = EulerRouterFactory(factory).deploy(evc, governor);
 
 // Configure pricing for asset pairs
 EulerRouter eulerRouter = EulerRouter(router);
 
 // Set direct oracle for ETH/USD
+// Note: Assets are lexicographically sorted internally
 eulerRouter.govSetConfig(
     weth,                    // Base asset
     usd,                     // Quote asset  
@@ -1749,105 +1750,170 @@ eulerRouter.govSetConfig(
 );
 ```
 
-**Correct: cross-pricing through intermediary**
+**Correct: understanding resolution - NO automatic cross-pricing**
 
 ```solidity
-// For TOKEN/USD when only TOKEN/ETH and ETH/USD exist
-// Router automatically chains: TOKEN -> ETH -> USD
+// IMPORTANT: EulerRouter does NOT automatically chain oracles!
+// For TOKEN/USD pricing, you must EITHER:
+// 1. Configure a direct TOKEN/USD oracle, OR
+// 2. Use a CrossAdapter that handles the cross-pricing internally
 
-// Step 1: Configure TOKEN/ETH oracle
-eulerRouter.govSetConfig(
-    tokenAddress,
-    weth,
-    tokenEthOracle  // e.g., Uniswap V3 TWAP
+// Resolution order in resolveOracle():
+// 1. base == quote? Return inAmount (same asset)
+// 2. Direct oracle configured for base/quote? Use it
+// 3. Base is a resolved ERC4626 vault? Convert via convertToAssets, recurse
+// 4. Fallback oracle set? Use it
+// 5. Revert with PriceOracle_NotSupported
+
+// Example: If you need TOKEN/USD via TOKEN/ETH and ETH/USD,
+// use a CrossAdapter, not multiple govSetConfig calls
+import {CrossAdapter} from "euler-price-oracle/adapter/CrossAdapter.sol";
+
+// Deploy cross adapter that chains TOKEN/ETH -> ETH/USD
+address crossAdapter = new CrossAdapter(
+    tokenEthOracle,   // First oracle: TOKEN/ETH
+    ethUsdOracle,     // Second oracle: ETH/USD
+    weth              // Cross asset (intermediate)
 );
 
-// Step 2: Configure ETH/USD oracle (if not already set)
-eulerRouter.govSetConfig(
-    weth,
-    usd,
-    chainlinkEthUsdOracle
-);
-
-// Now TOKEN/USD queries work automatically via cross-pricing
-// Router will query TOKEN/ETH, then ETH/USD, and multiply
-uint256 tokenUsdPrice = eulerRouter.getQuote(1e18, tokenAddress, usd);
+// Configure router with the cross adapter
+eulerRouter.govSetConfig(tokenAddress, usd, crossAdapter);
 ```
 
 **Correct: ERC-4626 vault share pricing**
 
 ```solidity
 // For pricing vault shares in terms of underlying
-// Router uses convertToAssets() for accurate share valuation
+// Router uses convertToAssets() for automatic share->asset conversion
 
-// Configure underlying asset pricing
+// Configure underlying asset pricing first
 eulerRouter.govSetConfig(
     underlyingAsset,
     usd,
     underlyingOracle
 );
 
-// Enable vault share resolution (special handling)
+// Enable vault share resolution
+// Router will call vault.convertToAssets() and recurse
 eulerRouter.govSetResolvedVault(
     vaultAddress,
     true  // Enable automatic share->asset conversion
 );
 
+// To disable later:
+eulerRouter.govSetResolvedVault(vaultAddress, false);
+
 // Now queries for vault shares work:
-// vaultShares -> underlying -> USD
+// vaultShares -> convertToAssets -> underlying -> USD
 uint256 shareValueUsd = eulerRouter.getQuote(1e18, vaultAddress, usd);
+
+// IMPORTANT: Verify vault's convertToAssets is secure before configuring!
+// Per ERC4626 spec, convert* ignores liquidity, fees, slippage
+// The reported price may not be realizable through redeem/withdraw
 ```
 
 **Correct: TypeScript router configuration**
 
 ```typescript
-import { encodeFunctionData } from 'viem';
+import { encodeFunctionData, getContract } from 'viem';
 
-// Batch configure multiple oracle routes
-const configItems = [
-  { base: WETH, quote: USD, oracle: chainlinkEthUsd },
-  { base: WBTC, quote: USD, oracle: chainlinkBtcUsd },
-  { base: LINK, quote: ETH, oracle: uniswapLinkEth },
-  { base: UNI, quote: ETH, oracle: uniswapUniEth },
-];
+const eulerRouter = getContract({
+  address: routerAddress,
+  abi: eulerRouterABI,
+  client: walletClient
+});
 
-const batchCalls = configItems.map(({ base, quote, oracle }) =>
-  encodeFunctionData({
-    abi: eulerRouterABI,
-    functionName: 'govSetConfig',
-    args: [base, quote, oracle],
-  })
-);
+// Configure oracle for asset pair
+// Note: gov functions require being called by governor via EVC context
+await eulerRouter.write.govSetConfig([
+  wethAddress,        // base
+  usdAddress,         // quote  
+  chainlinkOracle     // oracle adapter
+]);
 
-// Execute via governor or multisig
-await governor.executeBatch(router, batchCalls);
+// Configure resolved vault for share pricing
+await eulerRouter.write.govSetResolvedVault([
+  vaultAddress,
+  true  // set = true to enable, false to disable
+]);
+
+// Query prices
+const quote = await eulerRouter.read.getQuote([
+  parseEther('1'),    // inAmount
+  wethAddress,        // base
+  usdAddress          // quote
+]);
+
+// Get bid/ask quotes
+const [bid, ask] = await eulerRouter.read.getQuotes([
+  parseEther('1'),
+  wethAddress,
+  usdAddress
+]);
+
+// Check configured oracle for a pair
+const oracle = await eulerRouter.read.getConfiguredOracle([
+  wethAddress,
+  usdAddress
+]);
 ```
 
 **Correct: fallback configuration**
 
 ```solidity
-// Set fallback oracle for unregistered pairs
-// Useful for broad coverage with specific overrides
+// Set fallback oracle for pairs without direct config
+// Called when no direct oracle AND base is not a resolved vault
 eulerRouter.govSetFallbackOracle(fallbackOracleAddress);
 
-// Query resolution order:
-// 1. Direct config for base/quote pair
-// 2. Cross-pricing via configured intermediaries
-// 3. Fallback oracle (if set)
+// To remove fallback:
+eulerRouter.govSetFallbackOracle(address(0));
+
+// Resolution order:
+// 1. base == quote → return inAmount
+// 2. Direct config for base/quote → use configured oracle
+// 3. Base is resolved vault → convertToAssets, recurse with asset
+// 4. Fallback oracle exists → use fallback
+// 5. No fallback → revert PriceOracle_NotSupported(base, quote)
+```
+
+**Correct: querying existing configuration**
+
+```solidity
+// Get configured oracle for a pair
+// Returns address(0) if not configured
+address oracle = eulerRouter.getConfiguredOracle(base, quote);
+
+// Check if vault is configured for resolved pricing
+address asset = eulerRouter.resolvedVaults(vaultAddress);
+bool isResolved = asset != address(0);
+
+// Get current fallback oracle
+address fallback = eulerRouter.fallbackOracle();
+
+// Simulate full resolution path
+(uint256 resolvedAmount, address resolvedBase, address resolvedQuote, address resolvedOracle) = 
+    eulerRouter.resolveOracle(inAmount, base, quote);
 ```
 
 **Important considerations:**
 
 ```solidity
+// Gov functions have onlyEVCAccountOwner and onlyGovernor modifiers
+// Must be called by governor, typically via EVC context
+
 // Finalize router to make immutable (optional)
 eulerRouter.transferGovernance(address(0));
 // WARNING: No more configuration changes possible after this!
 
 // For upgradeable setups, use a timelock or multisig as governor
 // This allows fixing oracle issues without vault redeployment
+
+// Assets are lexicographically sorted internally in the mapping
+// govSetConfig(A, B, oracle) and govSetConfig(B, A, oracle) 
+// configure the same pair - order doesn't matter for callers
 ```
 
-Reference: [https://github.com/euler-xyz/euler-price-oracle#eulerrouter](https://github.com/euler-xyz/euler-price-oracle#eulerrouter)
+Reference: [https://github.com/euler-xyz/euler-price-oracle/blob/master/src/EulerRouter.sol](https://github.com/euler-xyz/euler-price-oracle/blob/master/src/EulerRouter.sol)
 
 ### 4.2 Deploy an Oracle Adapter
 
@@ -2176,6 +2242,10 @@ Core market design and vault architecture concepts. Understanding Euler's modula
 
 Euler V2 uses a modular "vault kit" architecture where each market is an independent ERC-4626 vault with its own configuration for oracle, interest rate model, and collateral relationships.
 
+- [Euler Markets Documentation](https://docs.euler.finance/concepts/core/markets)
+
+- [EVK Whitepaper](https://github.com/euler-xyz/euler-vault-kit/blob/master/docs/whitepaper.md)
+
 **Incorrect: assuming monolithic pool like Compound/Aave**
 
 ```solidity
@@ -2264,9 +2334,67 @@ for (const collateral of ltvList) {
 
 6. **LTV is vault-to-vault**: Each collateral-controller pair has specific LTV settings
 
-This modular design allows for permissionless market creation - anyone can deploy a vault with custom parameters while the EVC provides the security layer for cross-vault interactions.
+**Market Design Patterns:**
 
-Reference: [https://github.com/euler-xyz/euler-vault-kit/blob/master/docs/whitepaper.md](https://github.com/euler-xyz/euler-vault-kit/blob/master/docs/whitepaper.md)
+```solidity
+// Example: Simple isolated pair (Morpho-style)
+// - WETH vault holds collateral in escrow only
+// - USDC vault is the lending/borrowing vault
+// - WETH vault has no borrowing enabled
+
+// Example: Rehypothecation pair (Silo-style)  
+// - WETH vault: accepts USDC as collateral, lends WETH
+// - USDC vault: accepts WETH as collateral, lends USDC
+// - Assets earn yield while backing loans
+
+// Example: Cross-collateralised cluster (Aave-style)
+// - WETH, WBTC, USDC, DAI vaults all interconnected
+// - Each can lend and serve as collateral for others
+// - Higher contagion risk if one vault defaults
+```
+
+Euler's modular architecture enables various market structures. Choose based on capital efficiency vs risk isolation tradeoffs:
+
+| Design | Description | Similar To | Capital Efficiency | Risk Isolation |
+
+|--------|-------------|------------|-------------------|----------------|
+
+| Simple collateral-debt pairs | One collateral vault, one borrow vault | Morpho, FraxLend, Kashi | Low | High |
+
+| Rehypothecation pairs | Both vaults lend and serve as collateral for each other | Silo, Fluid | Medium | Medium |
+
+| Multiple collaterals | Many collateral vaults borrow from one lending vault | Compound | Medium-High | Medium |
+
+| Cross-collateralised clusters | Multiple vaults all lend and collateralize each other | Aave | High | Low |
+
+| Fully customisable | Any configuration, including vaults from existing markets | Unique to Euler | Variable | Variable |
+
+**Creating Custom Markets:**
+
+```solidity
+// Vaults can accept collateral from ANY existing vault
+// This enables composability with the broader Euler ecosystem
+
+// Step 1: Deploy your vault
+address myVault = EVaultFactory.createProxy(
+    asset,
+    false,  // not upgradeable
+    ""      // no trailing data
+);
+
+// Step 2: Configure to accept existing vault shares as collateral
+IEVault(myVault).setLTV(
+    existingPopularVault,  // e.g., an established USDC vault
+    0.85e4,                // 85% borrow LTV
+    0.90e4,                // 90% liquidation LTV
+    0                      // ramp duration
+);
+
+// Now users with deposits in existingPopularVault
+// can borrow from your new vault without moving funds!
+```
+
+This modular design allows for permissionless market creation - anyone can deploy a vault with custom parameters while the EVC provides the security layer for cross-vault interactions.
 
 ### 5.2 Understanding Vault Types (Core, Edge, Escrow)
 
@@ -3467,7 +3595,7 @@ Reference: [https://github.com/euler-xyz/euler-vault-scripts](https://github.com
 
 **Impact: MEDIUM (Efficiently querying historical and aggregated data)**
 
-Euler provides subgraphs for efficient querying of historical data, vault statistics, and account positions across all supported chains.
+Euler provides subgraphs deployed via Goldsky for efficient querying of historical data, vault statistics, and account positions across all supported chains.
 
 **Incorrect: querying everything on-chain**
 
@@ -3482,14 +3610,13 @@ for (const vault of allVaults) {
 **Correct: using Subgraph for aggregated data**
 
 ```typescript
-// Subgraph endpoints (as of 2025)
-const SUBGRAPH_URLS = {
-  1: 'https://api.studio.thegraph.com/query/[id]/euler-v2-mainnet/version/latest',
-  42161: 'https://api.studio.thegraph.com/query/[id]/euler-v2-arbitrum/version/latest',
-  8453: 'https://api.studio.thegraph.com/query/[id]/euler-v2-base/version/latest',
-};
+// Subgraphs are deployed via Goldsky
+// Check docs.euler.finance for current endpoint URLs
 
-// Check docs.euler.finance for current endpoints
+// Supported networks (as of 2025):
+// mainnet, arbitrum, base, swell, sonic, ink, unichain, avalanche,
+// berachain, bob, bsc, worldchain, hyperevm, optimism, gnosis,
+// tac, linea, plasma, mantle, monad
 ```
 
 **Correct: querying vault data**
@@ -3497,56 +3624,72 @@ const SUBGRAPH_URLS = {
 ```graphql
 # Get all vaults with their configuration
 query GetVaults {
-  vaults(first: 100, orderBy: totalSupplyAssets, orderDirection: desc) {
+  eulerVaults(first: 100, orderBy: blockTimestamp, orderDirection: desc) {
     id
-    address
-    asset {
-      address
-      symbol
-      decimals
-    }
-    totalSupplyAssets
-    totalSupplyShares
-    totalBorrowAssets
-    totalBorrowShares
-    interestRate
+    evault
+    name
+    symbol
+    asset
+    decimals
+    supplyCap
+    borrowCap
     interestFee
     oracle
     unitOfAccount
-    governorAdmin
-    supplyCap
-    borrowCap
-    createdAt
-    lastInterestAccrual
+    governonAdmin
+    feeReceiver
+    creator
+    interestRateModel
+    collaterals
+    perspectives
+    blockTimestamp
   }
 }
 ```
 
-**Correct: querying account positions**
+**Correct: querying vault status/state**
+
+```graphql
+# Get vault status with TVL and rates
+query GetVaultStatus($vault: Bytes!) {
+  vaultStatuses(
+    where: { vault: $vault }
+    orderBy: timestamp
+    orderDirection: desc
+    first: 1
+  ) {
+    id
+    vault
+    totalShares
+    totalBorrows
+    cash
+    accumulatedFees
+    interestAccumulator
+    interestRate
+    supplyApy
+    borrowApy
+    timestamp
+    blockTimestamp
+  }
+}
+```
+
+**Correct: querying account balances via TrackingVaultBalance**
 
 ```graphql
 # Get all positions for an account
-query GetAccountPositions($account: String!) {
-  account(id: $account) {
+# Note: Account entity only has id, subAccount, owner
+# Use TrackingVaultBalance for position data
+query GetAccountPositions($mainAddress: Bytes!) {
+  trackingVaultBalances(where: { mainAddress: $mainAddress }) {
     id
-    positions {
-      vault {
-        address
-        asset {
-          symbol
-        }
-      }
-      supplyShares
-      supplyAssets
-      borrowShares
-      borrowAssets
-      enabledAsCollateral
-    }
-    controllers {
-      vault {
-        address
-      }
-    }
+    vault
+    mainAddress
+    account
+    balance
+    debt
+    isControllerEnabled
+    blockTimestamp
   }
 }
 ```
@@ -3556,35 +3699,30 @@ query GetAccountPositions($account: String!) {
 ```typescript
 import { request, gql } from 'graphql-request';
 
-const SUBGRAPH_URL = 'https://api.studio.thegraph.com/query/[id]/euler-v2-mainnet/version/latest';
+// Get current endpoint from docs.euler.finance
+const SUBGRAPH_URL = 'https://api.goldsky.com/api/public/.../euler-mainnet/gn';
 
 // Query vault information
 const getVaultInfo = async (vaultAddress: string) => {
   const query = gql`
-    query GetVault($id: ID!) {
-      vault(id: $id) {
+    query GetVault($id: Bytes!) {
+      eulerVault(id: $id) {
         id
-        address
-        asset {
-          address
-          symbol
-          decimals
-        }
-        totalSupplyAssets
-        totalBorrowAssets
-        interestRate
+        evault
+        name
+        symbol
+        asset
+        decimals
         supplyCap
         borrowCap
-        collaterals {
-          collateral {
-            address
-            asset {
-              symbol
-            }
-          }
-          borrowLTV
-          liquidationLTV
-        }
+        interestFee
+        oracle
+        unitOfAccount
+        collaterals
+        governonAdmin
+        feeReceiver
+        creator
+        blockTimestamp
       }
     }
   `;
@@ -3592,46 +3730,47 @@ const getVaultInfo = async (vaultAddress: string) => {
   return request(SUBGRAPH_URL, query, { id: vaultAddress.toLowerCase() });
 };
 
-// Query top vaults by TVL
-const getTopVaults = async (limit: number = 10) => {
+// Query vault current state
+const getVaultStatus = async (vaultAddress: string) => {
   const query = gql`
-    query GetTopVaults($first: Int!) {
-      vaults(first: $first, orderBy: totalSupplyAssets, orderDirection: desc) {
-        id
-        address
-        asset {
-          symbol
-        }
-        totalSupplyAssets
-        totalBorrowAssets
+    query GetVaultStatus($vault: Bytes!) {
+      vaultStatuses(
+        where: { vault: $vault }
+        orderBy: timestamp
+        orderDirection: desc
+        first: 1
+      ) {
+        totalShares
+        totalBorrows
+        cash
+        interestRate
+        supplyApy
+        borrowApy
+        timestamp
       }
     }
   `;
   
-  return request(SUBGRAPH_URL, query, { first: limit });
+  return request(SUBGRAPH_URL, query, { vault: vaultAddress.toLowerCase() });
 };
 
 // Query user positions
 const getUserPositions = async (account: string) => {
   const query = gql`
-    query GetUserPositions($account: ID!) {
-      account(id: $account) {
-        positions(where: { supplyShares_gt: "0" }) {
-          vault {
-            address
-            asset {
-              symbol
-              decimals
-            }
-          }
-          supplyAssets
-          borrowAssets
-        }
+    query GetUserPositions($mainAddress: Bytes!) {
+      trackingVaultBalances(
+        where: { mainAddress: $mainAddress, balance_gt: "0" }
+      ) {
+        vault
+        balance
+        debt
+        isControllerEnabled
+        blockTimestamp
       }
     }
   `;
   
-  return request(SUBGRAPH_URL, query, { account: account.toLowerCase() });
+  return request(SUBGRAPH_URL, query, { mainAddress: account.toLowerCase() });
 };
 
 // Query historical APY
@@ -3639,15 +3778,18 @@ const getHistoricalAPY = async (vault: string, days: number = 30) => {
   const since = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60);
   
   const query = gql`
-    query GetAPYHistory($vault: String!, $since: BigInt!) {
-      vaultSnapshots(
+    query GetAPYHistory($vault: Bytes!, $since: BigInt!) {
+      vaultStatuses(
         where: { vault: $vault, timestamp_gte: $since }
         orderBy: timestamp
         first: 1000
       ) {
         timestamp
         interestRate
-        utilization
+        supplyApy
+        borrowApy
+        totalShares
+        totalBorrows
       }
     }
   `;
@@ -3666,30 +3808,87 @@ const getHistoricalAPY = async (vault: string, days: number = 30) => {
 ```graphql
 # Get recent liquidations
 query GetLiquidations($since: BigInt!) {
-  liquidations(
-    where: { timestamp_gte: $since }
-    orderBy: timestamp
+  liquidates(
+    where: { blockTimestamp_gte: $since }
+    orderBy: blockTimestamp
     orderDirection: desc
     first: 100
   ) {
     id
-    timestamp
+    blockTimestamp
     liquidator
     violator
-    vault {
-      address
-      asset {
-        symbol
-      }
-    }
-    collateralVault {
-      address
-      asset {
-        symbol
-      }
-    }
+    vault
+    collateral
     repayAssets
     yieldBalance
+    transactionHash
+  }
+}
+```
+
+**Correct: querying deposits and withdrawals**
+
+```graphql
+# Get deposit events
+query GetDeposits($vault: Bytes!, $since: BigInt!) {
+  deposits(
+    where: { vault: $vault, blockTimestamp_gte: $since }
+    orderBy: blockTimestamp
+    orderDirection: desc
+  ) {
+    id
+    sender
+    owner
+    assets
+    shares
+    vault
+    blockTimestamp
+    transactionHash
+  }
+}
+
+# Get withdrawal events
+query GetWithdrawals($vault: Bytes!, $since: BigInt!) {
+  withdraws(
+    where: { vault: $vault, blockTimestamp_gte: $since }
+    orderBy: blockTimestamp
+    orderDirection: desc
+  ) {
+    id
+    sender
+    receiver
+    owner
+    assets
+    shares
+    vault
+    blockTimestamp
+    transactionHash
+  }
+}
+```
+
+**Correct: querying Euler Earn vaults**
+
+```graphql
+# Get Euler Earn aggregator vaults
+query GetEulerEarnVaults {
+  eulerEarnVaults(first: 100) {
+    id
+    name
+    symbol
+    asset
+    owner
+    curator
+    guardian
+    feeReceiver
+    performanceFee
+    timelock
+    totalShares
+    totalAssets
+    totalAllocated
+    supplyQueue
+    blockTimestamp
   }
 }
 ```
@@ -3700,7 +3899,17 @@ query GetLiquidations($since: BigInt!) {
 // Best practice: Use subgraph for discovery, on-chain for current state
 
 // 1. Use subgraph to find relevant vaults
-const topVaults = await getTopVaults(20);
+const vaultsQuery = gql`
+  query {
+    eulerVaults(first: 20, orderBy: blockTimestamp, orderDirection: desc) {
+      evault
+      name
+      symbol
+      asset
+    }
+  }
+`;
+const topVaults = await request(SUBGRAPH_URL, vaultsQuery);
 
 // 2. Use on-chain for real-time data
 const vaultLens = getContract({
@@ -3709,34 +3918,40 @@ const vaultLens = getContract({
   client
 });
 
-for (const vault of topVaults.vaults) {
+for (const vault of topVaults.eulerVaults) {
   // Get current state on-chain (more accurate)
-  const info = await vaultLens.read.getVaultInfoDynamic([vault.address]);
+  const info = await vaultLens.read.getVaultInfoDynamic([vault.evault]);
   
   // Combine with historical data from subgraph
-  const history = await getHistoricalAPY(vault.address, 7);
+  const history = await getHistoricalAPY(vault.evault, 7);
   
-  console.log(`${vault.asset.symbol}: Current APY ${info.supplyAPY}, 7d avg ${calculateAvg(history)}`);
+  console.log(`${vault.symbol}: Current APY ${info.supplyAPY}`);
 }
 ```
 
-**Available Subgraph Data:**
+**Available Subgraph Entities:**
 
-| Entity | Fields | Use Case |
+| Entity | Key Fields | Use Case |
 
-|--------|--------|----------|
+|--------|------------|----------|
 
-| Vault | TVL, rates, caps, config | Vault discovery |
+| EulerVault | evault, asset, caps, oracle | Vault discovery & config |
 
-| Account | Positions, collaterals, controllers | User portfolios |
+| VaultStatus | totalShares, totalBorrows, APYs | TVL, rates, utilization |
 
-| VaultSnapshot | Historical rates, utilization | APY charts |
+| TrackingVaultBalance | balance, debt, vault | User positions |
 
-| Liquidation | Events, amounts, participants | Risk monitoring |
+| Liquidate | violator, repayAssets, collateral | Liquidation events |
 
-| Deposit/Withdraw | User activity history | Transaction history |
+| Deposit/Withdraw | assets, shares, sender | Transaction history |
 
-Reference: [https://docs.euler.finance/developers/data-querying/subgraphs](https://docs.euler.finance/developers/data-querying/subgraphs)
+| Borrow/Repay | assets, account | Borrow activity |
+
+| EulerEarnVault | totalAssets, strategies | Earn aggregators |
+
+| EulerSwapPool | reserves, fee, assets | Swap pool data |
+
+Reference: [https://github.com/euler-xyz/euler-subgraph](https://github.com/euler-xyz/euler-subgraph)
 
 ---
 

@@ -7,7 +7,7 @@ tags: subgraph, graphql, data, indexing, analytics
 
 ## Data Querying with Subgraphs
 
-Euler provides subgraphs for efficient querying of historical data, vault statistics, and account positions across all supported chains.
+Euler provides subgraphs deployed via Goldsky for efficient querying of historical data, vault statistics, and account positions across all supported chains.
 
 **Incorrect (querying everything on-chain):**
 
@@ -22,14 +22,13 @@ for (const vault of allVaults) {
 **Correct (using Subgraph for aggregated data):**
 
 ```typescript
-// Subgraph endpoints (as of 2025)
-const SUBGRAPH_URLS = {
-  1: 'https://api.studio.thegraph.com/query/[id]/euler-v2-mainnet/version/latest',
-  42161: 'https://api.studio.thegraph.com/query/[id]/euler-v2-arbitrum/version/latest',
-  8453: 'https://api.studio.thegraph.com/query/[id]/euler-v2-base/version/latest',
-};
+// Subgraphs are deployed via Goldsky
+// Check docs.euler.finance for current endpoint URLs
 
-// Check docs.euler.finance for current endpoints
+// Supported networks (as of 2025):
+// mainnet, arbitrum, base, swell, sonic, ink, unichain, avalanche,
+// berachain, bob, bsc, worldchain, hyperevm, optimism, gnosis,
+// tac, linea, plasma, mantle, monad
 ```
 
 **Correct (querying vault data):**
@@ -37,56 +36,72 @@ const SUBGRAPH_URLS = {
 ```graphql
 # Get all vaults with their configuration
 query GetVaults {
-  vaults(first: 100, orderBy: totalSupplyAssets, orderDirection: desc) {
+  eulerVaults(first: 100, orderBy: blockTimestamp, orderDirection: desc) {
     id
-    address
-    asset {
-      address
-      symbol
-      decimals
-    }
-    totalSupplyAssets
-    totalSupplyShares
-    totalBorrowAssets
-    totalBorrowShares
-    interestRate
+    evault
+    name
+    symbol
+    asset
+    decimals
+    supplyCap
+    borrowCap
     interestFee
     oracle
     unitOfAccount
-    governorAdmin
-    supplyCap
-    borrowCap
-    createdAt
-    lastInterestAccrual
+    governonAdmin
+    feeReceiver
+    creator
+    interestRateModel
+    collaterals
+    perspectives
+    blockTimestamp
   }
 }
 ```
 
-**Correct (querying account positions):**
+**Correct (querying vault status/state):**
+
+```graphql
+# Get vault status with TVL and rates
+query GetVaultStatus($vault: Bytes!) {
+  vaultStatuses(
+    where: { vault: $vault }
+    orderBy: timestamp
+    orderDirection: desc
+    first: 1
+  ) {
+    id
+    vault
+    totalShares
+    totalBorrows
+    cash
+    accumulatedFees
+    interestAccumulator
+    interestRate
+    supplyApy
+    borrowApy
+    timestamp
+    blockTimestamp
+  }
+}
+```
+
+**Correct (querying account balances via TrackingVaultBalance):**
 
 ```graphql
 # Get all positions for an account
-query GetAccountPositions($account: String!) {
-  account(id: $account) {
+# Note: Account entity only has id, subAccount, owner
+# Use TrackingVaultBalance for position data
+query GetAccountPositions($mainAddress: Bytes!) {
+  trackingVaultBalances(where: { mainAddress: $mainAddress }) {
     id
-    positions {
-      vault {
-        address
-        asset {
-          symbol
-        }
-      }
-      supplyShares
-      supplyAssets
-      borrowShares
-      borrowAssets
-      enabledAsCollateral
-    }
-    controllers {
-      vault {
-        address
-      }
-    }
+    vault
+    mainAddress
+    account
+    balance
+    debt
+    isControllerEnabled
+    blockTimestamp
   }
 }
 ```
@@ -95,17 +110,19 @@ query GetAccountPositions($account: String!) {
 
 ```graphql
 # Get interest rate snapshots for a vault
-query GetInterestRateHistory($vault: String!, $since: BigInt!) {
-  vaultSnapshots(
+query GetInterestRateHistory($vault: Bytes!, $since: BigInt!) {
+  vaultStatuses(
     where: { vault: $vault, timestamp_gte: $since }
     orderBy: timestamp
     orderDirection: asc
   ) {
     timestamp
     interestRate
-    totalSupplyAssets
-    totalBorrowAssets
-    utilization
+    supplyApy
+    borrowApy
+    totalShares
+    totalBorrows
+    cash
   }
 }
 ```
@@ -115,35 +132,30 @@ query GetInterestRateHistory($vault: String!, $since: BigInt!) {
 ```typescript
 import { request, gql } from 'graphql-request';
 
-const SUBGRAPH_URL = 'https://api.studio.thegraph.com/query/[id]/euler-v2-mainnet/version/latest';
+// Get current endpoint from docs.euler.finance
+const SUBGRAPH_URL = 'https://api.goldsky.com/api/public/.../euler-mainnet/gn';
 
 // Query vault information
 const getVaultInfo = async (vaultAddress: string) => {
   const query = gql`
-    query GetVault($id: ID!) {
-      vault(id: $id) {
+    query GetVault($id: Bytes!) {
+      eulerVault(id: $id) {
         id
-        address
-        asset {
-          address
-          symbol
-          decimals
-        }
-        totalSupplyAssets
-        totalBorrowAssets
-        interestRate
+        evault
+        name
+        symbol
+        asset
+        decimals
         supplyCap
         borrowCap
-        collaterals {
-          collateral {
-            address
-            asset {
-              symbol
-            }
-          }
-          borrowLTV
-          liquidationLTV
-        }
+        interestFee
+        oracle
+        unitOfAccount
+        collaterals
+        governonAdmin
+        feeReceiver
+        creator
+        blockTimestamp
       }
     }
   `;
@@ -151,46 +163,47 @@ const getVaultInfo = async (vaultAddress: string) => {
   return request(SUBGRAPH_URL, query, { id: vaultAddress.toLowerCase() });
 };
 
-// Query top vaults by TVL
-const getTopVaults = async (limit: number = 10) => {
+// Query vault current state
+const getVaultStatus = async (vaultAddress: string) => {
   const query = gql`
-    query GetTopVaults($first: Int!) {
-      vaults(first: $first, orderBy: totalSupplyAssets, orderDirection: desc) {
-        id
-        address
-        asset {
-          symbol
-        }
-        totalSupplyAssets
-        totalBorrowAssets
+    query GetVaultStatus($vault: Bytes!) {
+      vaultStatuses(
+        where: { vault: $vault }
+        orderBy: timestamp
+        orderDirection: desc
+        first: 1
+      ) {
+        totalShares
+        totalBorrows
+        cash
+        interestRate
+        supplyApy
+        borrowApy
+        timestamp
       }
     }
   `;
   
-  return request(SUBGRAPH_URL, query, { first: limit });
+  return request(SUBGRAPH_URL, query, { vault: vaultAddress.toLowerCase() });
 };
 
 // Query user positions
 const getUserPositions = async (account: string) => {
   const query = gql`
-    query GetUserPositions($account: ID!) {
-      account(id: $account) {
-        positions(where: { supplyShares_gt: "0" }) {
-          vault {
-            address
-            asset {
-              symbol
-              decimals
-            }
-          }
-          supplyAssets
-          borrowAssets
-        }
+    query GetUserPositions($mainAddress: Bytes!) {
+      trackingVaultBalances(
+        where: { mainAddress: $mainAddress, balance_gt: "0" }
+      ) {
+        vault
+        balance
+        debt
+        isControllerEnabled
+        blockTimestamp
       }
     }
   `;
   
-  return request(SUBGRAPH_URL, query, { account: account.toLowerCase() });
+  return request(SUBGRAPH_URL, query, { mainAddress: account.toLowerCase() });
 };
 
 // Query historical APY
@@ -198,15 +211,18 @@ const getHistoricalAPY = async (vault: string, days: number = 30) => {
   const since = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60);
   
   const query = gql`
-    query GetAPYHistory($vault: String!, $since: BigInt!) {
-      vaultSnapshots(
+    query GetAPYHistory($vault: Bytes!, $since: BigInt!) {
+      vaultStatuses(
         where: { vault: $vault, timestamp_gte: $since }
         orderBy: timestamp
         first: 1000
       ) {
         timestamp
         interestRate
-        utilization
+        supplyApy
+        borrowApy
+        totalShares
+        totalBorrows
       }
     }
   `;
@@ -223,30 +239,87 @@ const getHistoricalAPY = async (vault: string, days: number = 30) => {
 ```graphql
 # Get recent liquidations
 query GetLiquidations($since: BigInt!) {
-  liquidations(
-    where: { timestamp_gte: $since }
-    orderBy: timestamp
+  liquidates(
+    where: { blockTimestamp_gte: $since }
+    orderBy: blockTimestamp
     orderDirection: desc
     first: 100
   ) {
     id
-    timestamp
+    blockTimestamp
     liquidator
     violator
-    vault {
-      address
-      asset {
-        symbol
-      }
-    }
-    collateralVault {
-      address
-      asset {
-        symbol
-      }
-    }
+    vault
+    collateral
     repayAssets
     yieldBalance
+    transactionHash
+  }
+}
+```
+
+**Correct (querying deposits and withdrawals):**
+
+```graphql
+# Get deposit events
+query GetDeposits($vault: Bytes!, $since: BigInt!) {
+  deposits(
+    where: { vault: $vault, blockTimestamp_gte: $since }
+    orderBy: blockTimestamp
+    orderDirection: desc
+  ) {
+    id
+    sender
+    owner
+    assets
+    shares
+    vault
+    blockTimestamp
+    transactionHash
+  }
+}
+
+# Get withdrawal events
+query GetWithdrawals($vault: Bytes!, $since: BigInt!) {
+  withdraws(
+    where: { vault: $vault, blockTimestamp_gte: $since }
+    orderBy: blockTimestamp
+    orderDirection: desc
+  ) {
+    id
+    sender
+    receiver
+    owner
+    assets
+    shares
+    vault
+    blockTimestamp
+    transactionHash
+  }
+}
+```
+
+**Correct (querying Euler Earn vaults):**
+
+```graphql
+# Get Euler Earn aggregator vaults
+query GetEulerEarnVaults {
+  eulerEarnVaults(first: 100) {
+    id
+    name
+    symbol
+    asset
+    owner
+    curator
+    guardian
+    feeReceiver
+    performanceFee
+    timelock
+    totalShares
+    totalAssets
+    totalAllocated
+    supplyQueue
+    blockTimestamp
   }
 }
 ```
@@ -257,7 +330,17 @@ query GetLiquidations($since: BigInt!) {
 // Best practice: Use subgraph for discovery, on-chain for current state
 
 // 1. Use subgraph to find relevant vaults
-const topVaults = await getTopVaults(20);
+const vaultsQuery = gql`
+  query {
+    eulerVaults(first: 20, orderBy: blockTimestamp, orderDirection: desc) {
+      evault
+      name
+      symbol
+      asset
+    }
+  }
+`;
+const topVaults = await request(SUBGRAPH_URL, vaultsQuery);
 
 // 2. Use on-chain for real-time data
 const vaultLens = getContract({
@@ -266,25 +349,28 @@ const vaultLens = getContract({
   client
 });
 
-for (const vault of topVaults.vaults) {
+for (const vault of topVaults.eulerVaults) {
   // Get current state on-chain (more accurate)
-  const info = await vaultLens.read.getVaultInfoDynamic([vault.address]);
+  const info = await vaultLens.read.getVaultInfoDynamic([vault.evault]);
   
   // Combine with historical data from subgraph
-  const history = await getHistoricalAPY(vault.address, 7);
+  const history = await getHistoricalAPY(vault.evault, 7);
   
-  console.log(`${vault.asset.symbol}: Current APY ${info.supplyAPY}, 7d avg ${calculateAvg(history)}`);
+  console.log(`${vault.symbol}: Current APY ${info.supplyAPY}`);
 }
 ```
 
-**Available Subgraph Data:**
+**Available Subgraph Entities:**
 
-| Entity | Fields | Use Case |
-|--------|--------|----------|
-| Vault | TVL, rates, caps, config | Vault discovery |
-| Account | Positions, collaterals, controllers | User portfolios |
-| VaultSnapshot | Historical rates, utilization | APY charts |
-| Liquidation | Events, amounts, participants | Risk monitoring |
-| Deposit/Withdraw | User activity history | Transaction history |
+| Entity | Key Fields | Use Case |
+|--------|------------|----------|
+| EulerVault | evault, asset, caps, oracle | Vault discovery & config |
+| VaultStatus | totalShares, totalBorrows, APYs | TVL, rates, utilization |
+| TrackingVaultBalance | balance, debt, vault | User positions |
+| Liquidate | violator, repayAssets, collateral | Liquidation events |
+| Deposit/Withdraw | assets, shares, sender | Transaction history |
+| Borrow/Repay | assets, account | Borrow activity |
+| EulerEarnVault | totalAssets, strategies | Earn aggregators |
+| EulerSwapPool | reserves, fee, assets | Swap pool data |
 
-Reference: [Euler Subgraphs](https://docs.euler.finance/developers/data-querying/subgraphs)
+Reference: [Euler Subgraph Repository](https://github.com/euler-xyz/euler-subgraph)
