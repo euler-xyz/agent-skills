@@ -16,9 +16,9 @@ Euler V2 supports multiple Interest Rate Model (IRM) types, each suited for diff
 // This can lead to under/over-utilization and poor capital efficiency
 address irm = kinkIRMFactory.deploy(
     0,           // baseRate
-    4e27,        // slope1 (4%)
-    300e27,      // slope2 (300%)
-    0.9e18       // kink (90%)
+    4e27,        // slope1 (too high!)
+    300e27,      // slope2 (too high!)
+    3865470566   // kink: 90% (type(uint32).max * 9 / 10)
 );
 // Static rates don't adapt to market conditions!
 ```
@@ -33,16 +33,23 @@ Traditional two-slope model. Rate increases linearly up to kink, then accelerate
 import {EulerKinkIRMFactory} from "evk-periphery/IRMFactory/EulerKinkIRMFactory.sol";
 
 // Good for stable assets with predictable utilization
+// kink parameter is uint32, representing utilization on type(uint32).max scale
+// 90% utilization = type(uint32).max * 9 / 10 = 3865470566
 address kinkIRM = EulerKinkIRMFactory(kinkIRMFactory).deploy(
-    0,           // baseRate: 0% at 0 utilization
-    1.585e25,    // slope1: ~5% APY at kink (in SPY: per-second rate)
-    13.16e27,    // slope2: ~300% APY at 100% utilization
-    0.9e9        // kink: 90% utilization (in type(uint32).max scale)
+    0,            // baseRate: 0% at 0 utilization
+    1406417851,   // slope1: ~10% APY at 50% kink (in SPY)
+    19050045013,  // slope2: ~100% APY at 100% utilization (in SPY)
+    3865470566    // kink: 90% utilization (type(uint32).max * 9 / 10)
 );
 
 // Rate formula:
 // if utilization <= kink: rate = baseRate + utilization * slope1
 // else: rate = baseRate + kink * slope1 + (utilization - kink) * slope2
+//
+// Common kink values (type(uint32).max scale):
+// - 50%: 2147483648  (type(uint32).max / 2)
+// - 80%: 3435973837  (type(uint32).max * 8 / 10)
+// - 90%: 3865470566  (type(uint32).max * 9 / 10)
 ```
 
 ### 2. Adaptive Curve IRM (IRMAdaptiveCurve)
@@ -76,12 +83,13 @@ Similar to kink IRM but with non-linear acceleration after kink using shape para
 import {EulerKinkyIRMFactory} from "evk-periphery/IRMFactory/EulerKinkyIRMFactory.sol";
 
 // Good for markets that need smoother rate transitions
+// Example: Base=0%, Kink(50%)=10% APY, Max=300% APY, Shape=10
 address kinkyIRM = EulerKinkyIRMFactory(kinkyIRMFactory).deploy(
-    0,            // baseRate
-    1e24,         // slope: determines rate growth
-    10,           // shape: 0-100, controls non-linear acceleration
-    0.9e9,        // kink: 90% utilization
-    2.5e27        // cutoff: maximum SPY (caps extreme rates)
+    0,             // baseRate: 0% at 0 utilization
+    1406417851,    // slope: rate growth factor (in SPY)
+    10,            // shape: 0-100, controls non-linear acceleration
+    2147483648,    // kink: 50% utilization (type(uint32).max / 2)
+    43929920467914357205  // cutoff: ~1000% APY max (caps extreme rates)
 );
 
 // Shape parameter controls how aggressively rates spike after kink

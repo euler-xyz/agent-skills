@@ -61,8 +61,9 @@ Comprehensive guide for interacting with Euler Finance V2 protocol. Covers vault
    - 10.2 [Manage EulerEarn Strategies](#102-manage-eulerearn-strategies)
 11. [EulerSwap](#11-eulerswap) — **MEDIUM**
    - 11.1 [Check EulerSwap Liquidity Limits](#111-check-eulerswap-liquidity-limits)
-   - 11.2 [Execute Swaps on EulerSwap](#112-execute-swaps-on-eulerswap)
-   - 11.3 [Get Swap Quotes from EulerSwap](#113-get-swap-quotes-from-eulerswap)
+   - 11.2 [Deploy EulerSwap Pool](#112-deploy-eulerswap-pool)
+   - 11.3 [Execute Swaps on EulerSwap](#113-execute-swaps-on-eulerswap)
+   - 11.4 [Get Swap Quotes from EulerSwap](#114-get-swap-quotes-from-eulerswap)
 
 ---
 
@@ -202,12 +203,14 @@ import {GenericFactory} from "evk/GenericFactory/GenericFactory.sol";
 import {IEVault} from "evk/EVault/IEVault.sol";
 
 // Step 1: Deploy or select an Interest Rate Model
-address irm = irmFactory.deploy(
-    baseRate,    // e.g., 0 for 0% base rate
-    slope1,      // e.g., 4e27 for 4% at kink
-    slope2,      // e.g., 300e27 for 300% max
-    kink         // e.g., 0.9e18 for 90% utilization
+// Using EulerKinkIRMFactory - kink is uint32 on type(uint32).max scale
+address irm = EulerKinkIRMFactory(kinkIRMFactory).deploy(
+    0,            // baseRate: 0% at 0 utilization
+    1406417851,   // slope1: ~10% APY at kink (in SPY)
+    19050045013,  // slope2: ~300% APY at 100% utilization (in SPY)
+    3865470566    // kink: 90% utilization (type(uint32).max * 9 / 10)
 );
+// See irm-models rule for detailed IRM configuration
 
 // Step 2: Deploy or configure an oracle
 address oracle = eulerRouter; // EulerRouter configured for this asset
@@ -247,13 +250,44 @@ vault.setLTV(
 );
 
 // Set caps to limit exposure (uint16 AmountCap encoding)
-// AmountCap format: 10 bits mantissa + 6 bits exponent
-// Use encodeAmountCap helper or pre-calculated values
-// Example: supplyCap=7059 ≈ 11e18, borrowCap=38418 ≈ 5e18
+// AmountCap format: upper 10 bits mantissa + lower 6 bits exponent
+// Formula: 10^exponent * mantissa / 100
+// Encoding: (mantissa << 6) | exponent
+//
+// IMPORTANT: Caps are in raw token units - you MUST account for decimals!
+//
+// Special values:
+//   - 0: NO CAP (unlimited) - uninitialized storage default
+//   - 1: ZERO CAP (blocks all deposits/borrows) - mantissa=0, exp=1
+//
+// For 18-decimal tokens (ETH, DAI, etc.):
+//   - 100 tokens = 100e18:  exp=20, mantissa=100 → (100 << 6) | 20 = 6420
+//   - 1000 tokens = 1000e18: exp=21, mantissa=100 → (100 << 6) | 21 = 6421
+//
+// For 6-decimal tokens (USDC, USDT, etc.):
+//   - 100 tokens = 100e6:   exp=8, mantissa=100 → (100 << 6) | 8 = 6408
+//   - 1000 tokens = 1000e6: exp=9, mantissa=100 → (100 << 6) | 9 = 6409
+//   - 1M tokens = 1e12:     exp=12, mantissa=100 → (100 << 6) | 12 = 6412
+//
+// For 8-decimal tokens (WBTC):
+//   - 100 tokens = 100e8:   exp=10, mantissa=100 → (100 << 6) | 10 = 6410
+
+// Example: 18-decimal token vault
 vault.setCaps(
-    7059,   // ~11e18 supply cap (see AmountCap encoding docs)
-    38418   // ~5e18 borrow cap
+    6420,   // 100 tokens supply cap (100e18 for 18-decimal token)
+    6419    // 10 tokens borrow cap (10e18 for 18-decimal token)
 );
+
+// Example: 6-decimal token vault (USDC)
+// vault.setCaps(6412, 6411);  // 1M supply cap, 100k borrow cap
+
+// Zero caps work the same for ANY token (6, 8, or 18 decimals):
+// The value 1 always resolves to 0 (mantissa=0, exp=1 → 10^1 * 0 / 100 = 0)
+
+vault.setCaps(0, 1);  // Disable borrowing: unlimited supply, zero borrow cap
+vault.setCaps(1, 0);  // Disable deposits: zero supply cap, unlimited borrow  
+vault.setCaps(1, 1);  // Disable both: zero supply cap, zero borrow cap
+
 // NOTE: Use VaultLens to decode caps to human-readable amounts
 
 // Set interest fee (protocol revenue)
@@ -2113,8 +2147,9 @@ IEVault(vault).setOracle(specificOracleAdapter);
 import {EulerRouter} from "euler-price-oracle/EulerRouter.sol";
 import {EulerRouterFactory} from "evk-periphery/EulerRouterFactory/EulerRouterFactory.sol";
 
-// Deploy router via factory (requires EVC address)
-address router = EulerRouterFactory(factory).deploy(evc, governor);
+// Deploy router via factory
+// Note: Factory was initialized with EVC address in its constructor
+address router = EulerRouterFactory(factory).deploy(governor);
 
 // Configure pricing for asset pairs
 EulerRouter eulerRouter = EulerRouter(router);
@@ -3028,9 +3063,9 @@ Euler V2 supports multiple Interest Rate Model (IRM) types, each suited for diff
 // This can lead to under/over-utilization and poor capital efficiency
 address irm = kinkIRMFactory.deploy(
     0,           // baseRate
-    4e27,        // slope1 (4%)
-    300e27,      // slope2 (300%)
-    0.9e18       // kink (90%)
+    4e27,        // slope1 (too high!)
+    300e27,      // slope2 (too high!)
+    3865470566   // kink: 90% (type(uint32).max * 9 / 10)
 );
 // Static rates don't adapt to market conditions!
 ```
@@ -5141,7 +5176,7 @@ const setupCalls = [
   }),
   encodeFunctionData({
     abi: eulerEarnABI,
-    functionName: 'setGuardian',
+    functionName: 'submitGuardian',
     args: [guardianAddress],
   }),
 ];
@@ -5171,23 +5206,26 @@ for (const call of setupCalls) {
 
 **Non-borrowable idle vault setup:**
 
-```solidity
-// For guaranteed liquidity, add a non-borrowable "idle" strategy
-// This ensures some funds are always withdrawable
+```typescript
+// TypeScript: Query factory for deployed vaults
+const vaultCount = await factory.read.getVaultListLength();
+console.log(`Total EulerEarn vaults: ${vaultCount}`);
 
-// Create or use an Escrow Vault (non-borrowable EVK)
-address escrowVault = createEscrowVault(asset);
+// Check if strategy can be used
+const canUseStrategy = await factory.read.isStrategyAllowed([strategyAddress]);
+if (!canUseStrategy) {
+  console.error('Strategy not verified by perspective');
+}
 
-// Add to EulerEarn with infinite cap
-earn.submitCap(escrowVault, type(uint184).max);
-// Wait for timelock...
-earn.acceptCap(escrowVault);
-
-// Put at end of supply queue (last priority)
-// Funds only go here if other strategies are full
+// Get all deployed vaults
+const allVaults = await factory.read.getVaultListSlice([0n, BigInt(2n ** 256n - 1n)]);
 ```
 
-Reference: [https://github.com/euler-xyz/euler-earn#readme](https://github.com/euler-xyz/euler-earn#readme)
+---
+
+The factory provides useful functions for discovering and validating EulerEarn vaults:
+
+Reference: [https://github.com/euler-xyz/euler-earn#readme](https://github.com/euler-xyz/euler-earn#readme), [https://github.com/euler-xyz/euler-earn/blob/master/src/EulerEarnFactory.sol](https://github.com/euler-xyz/euler-earn/blob/master/src/EulerEarnFactory.sol)
 
 ### 10.2 Manage EulerEarn Strategies
 
@@ -5195,15 +5233,17 @@ Reference: [https://github.com/euler-xyz/euler-earn#readme](https://github.com/e
 
 Strategy management involves adjusting allocations across ERC-4626 vaults to optimize yield while maintaining risk parameters. This is done by curators and allocators.
 
-**Incorrect: reallocating without checking liquidity**
+**Incorrect: wrong function signature and no liquidity check**
 
 ```solidity
-// This may fail if strategy doesn't have enough liquidity
+// ERROR: Wrong signature! reallocate takes MarketAllocation[] struct array
+// Also doesn't check if strategy has enough liquidity
 earn.reallocate(
     [strategyA, strategyB],
-    [type(uint256).max, 0]  // Withdraw all from A
+    [type(uint256).max, 0]  // Wrong! This is not valid syntax
 );
-// Error: strategy may have utilization, funds locked
+// The actual function takes: reallocate(MarketAllocation[] memory allocations)
+// where MarketAllocation has { IERC4626 id; uint256 assets; }
 ```
 
 **Correct: check liquidity before reallocating**
@@ -5405,9 +5445,158 @@ Key considerations:
 
 - Keep some allocation in liquid/idle vault for withdrawals
 
+---
+
+PublicAllocator enables anyone to trigger reallocations on EulerEarn vaults within admin-configured flow caps. This allows third parties (bots, keepers, MEV searchers) to optimize allocations without requiring allocator permissions.
+
+**Correct: admin configuring PublicAllocator**
+
+```solidity
+import {IPublicAllocator, FlowCapsConfig, FlowCaps} from "euler-earn/interfaces/IPublicAllocator.sol";
+
+IPublicAllocator publicAllocator = IPublicAllocator(publicAllocatorAddress);
+
+// Only vault owner or PublicAllocator admin can configure
+// Set admin for this vault (optional - owner can always configure)
+publicAllocator.setAdmin(earnVault, adminAddress);
+
+// Set fee for public reallocations (in wei, paid by caller)
+publicAllocator.setFee(earnVault, 0.001 ether);
+
+// Configure flow caps per strategy
+// maxIn: max assets that can flow INTO this strategy via public reallocation
+// maxOut: max assets that can flow OUT OF this strategy via public reallocation
+FlowCapsConfig[] memory configs = new FlowCapsConfig[](2);
+
+configs[0] = FlowCapsConfig({
+    id: IERC4626(strategyA),
+    caps: FlowCaps({
+        maxIn: 100_000e6,   // Allow up to 100k USDC to flow in
+        maxOut: 50_000e6    // Allow up to 50k USDC to flow out
+    })
+});
+
+configs[1] = FlowCapsConfig({
+    id: IERC4626(strategyB),
+    caps: FlowCaps({
+        maxIn: 200_000e6,
+        maxOut: 100_000e6
+    })
+});
+
+publicAllocator.setFlowCaps(earnVault, configs);
+```
+
+**Correct: public reallocation by anyone**
+
+```solidity
+import {IPublicAllocator, Withdrawal} from "euler-earn/interfaces/IPublicAllocator.sol";
+
+// Anyone can call reallocateTo if they pay the fee
+// This moves assets FROM withdrawal strategies TO a supply strategy
+
+// Step 1: Get the fee
+uint256 fee = publicAllocator.fee(earnVault);
+
+// Step 2: Prepare withdrawals (must be sorted by address, ascending)
+// Withdrawal struct: { IERC4626 id; uint128 amount; }
+Withdrawal[] memory withdrawals = new Withdrawal[](2);
+withdrawals[0] = Withdrawal({
+    id: IERC4626(lowYieldStrategy),
+    amount: 10_000e6  // Withdraw 10k from this strategy
+});
+withdrawals[1] = Withdrawal({
+    id: IERC4626(anotherLowYieldStrategy),
+    amount: 5_000e6   // Withdraw 5k from this strategy
+});
+
+// IMPORTANT: Withdrawals must be sorted by address (ascending)
+// and the supplyId cannot be in the withdrawals array
+
+// Step 3: Execute reallocation (paying the fee)
+publicAllocator.reallocateTo{value: fee}(
+    earnVault,
+    withdrawals,
+    IERC4626(highYieldStrategy)  // Deposit all withdrawn assets here
+);
+
+// Flow caps are automatically updated:
+// - Withdrawn strategies: maxIn increases, maxOut decreases
+// - Supply strategy: maxIn decreases, maxOut increases
+```
+
+**Correct: TypeScript public reallocation**
+
+```typescript
+import { encodeFunctionData, parseEther } from 'viem';
+
+// Check flow caps before attempting reallocation
+const [maxIn, maxOut] = await publicAllocator.read.flowCaps([
+  earnVault,
+  strategyAddress,
+]);
+
+console.log(`Strategy flow caps: maxIn=${maxIn}, maxOut=${maxOut}`);
+
+// Get fee
+const fee = await publicAllocator.read.fee([earnVault]);
+
+// Prepare withdrawals (sorted by address!)
+const withdrawals = [
+  { id: lowYieldStrategy, amount: 10000n * 10n ** 6n },
+].sort((a, b) => a.id.toLowerCase().localeCompare(b.id.toLowerCase()));
+
+// Execute public reallocation
+await publicAllocator.write.reallocateTo(
+  [earnVault, withdrawals, highYieldStrategy],
+  { value: fee }
+);
+```
+
+**Correct: claiming accrued fees as admin**
+
+```solidity
+// Check accrued fees
+uint256 accrued = publicAllocator.accruedFee(earnVault);
+
+// Transfer fees to recipient (only admin or vault owner)
+publicAllocator.transferFee(earnVault, payable(feeRecipient));
+```
+
+**PublicAllocator Key Points:**
+
+| Aspect | Details |
+
+|--------|---------|
+
+| Who can configure | Vault owner or designated admin |
+
+| Who can reallocate | Anyone (permissionless) |
+
+| Fee | Paid in ETH by caller, set per vault |
+
+| Flow caps | Per-strategy limits on in/out flows |
+
+| Sorting | Withdrawals must be sorted by address (ascending) |
+
+| Restrictions | Cannot include supplyId in withdrawals; strategies must be enabled |
+
+**Common Errors:**
+
+```solidity
+// IncorrectFee: msg.value doesn't match configured fee
+// EmptyWithdrawals: No withdrawals provided
+// MarketNotEnabled: Strategy not in earn vault
+// InconsistentWithdrawals: Not sorted by address or duplicates
+// DepositMarketInWithdrawals: supplyId appears in withdrawals
+// MaxOutflowExceeded: Trying to withdraw more than maxOut
+// MaxInflowExceeded: Trying to deposit more than maxIn
+// NotEnoughSupply: Strategy doesn't have enough assets
+```
+
 See also: [Lens Contracts](tools-lens) - EulerEarnVaultLens provides `getVaultInfoFull()` to query all strategies and their allocations.
 
-Reference: [https://github.com/euler-xyz/euler-earn#roles](https://github.com/euler-xyz/euler-earn#roles)
+Reference: [https://github.com/euler-xyz/euler-earn#roles](https://github.com/euler-xyz/euler-earn#roles), [https://github.com/euler-xyz/euler-earn/blob/master/src/PublicAllocator.sol](https://github.com/euler-xyz/euler-earn/blob/master/src/PublicAllocator.sol)
 
 ---
 
@@ -5636,7 +5825,205 @@ Key concepts:
 
 Reference: [https://github.com/euler-xyz/euler-swap#liquidity](https://github.com/euler-xyz/euler-swap#liquidity)
 
-### 11.2 Execute Swaps on EulerSwap
+### 11.2 Deploy EulerSwap Pool
+
+**Impact: HIGH (Create liquidity pools backed by Euler lending)**
+
+EulerSwap pools use Euler vaults for liquidity, allowing LPs to earn both trading fees and lending yields. Pools are deployed via `EulerSwapFactory.deployPool()`.
+
+**Incorrect: using traditional AMM assumptions**
+
+```solidity
+// WRONG: EulerSwap pools are NOT like Uniswap pools
+// They use Euler vaults for liquidity, not raw token deposits
+factory.createPair(tokenA, tokenB);  // Wrong interface!
+```
+
+**Correct: deploy EulerSwap pool via factory**
+
+```solidity
+import {IEulerSwapFactory} from "euler-swap/interfaces/IEulerSwapFactory.sol";
+import {IEulerSwap} from "euler-swap/interfaces/IEulerSwap.sol";
+
+IEulerSwapFactory factory = IEulerSwapFactory(factoryAddress);
+
+// StaticParams define the vault structure (immutable after deployment)
+IEulerSwap.StaticParams memory sParams = IEulerSwap.StaticParams({
+    supplyVault0: wethVault,    // Vault for supplying token0 (earns yield)
+    supplyVault1: usdcVault,    // Vault for supplying token1 (earns yield)
+    borrowVault0: wethVault,    // Vault for borrowing token0 (when selling token1)
+    borrowVault1: usdcVault,    // Vault for borrowing token1 (when selling token0)
+    eulerAccount: lpAccount,    // EVC sub-account that holds the position
+    feeRecipient: treasury      // Address receiving trading fees
+});
+
+// DynamicParams define pool behavior (can be updated by LP)
+// Based on real test patterns from euler-swap test suite
+IEulerSwap.DynamicParams memory dParams = IEulerSwap.DynamicParams({
+    equilibriumReserve0: 60e18,     // Target reserve of token0 (60 units)
+    equilibriumReserve1: 60e18,     // Target reserve of token1 (60 units)
+    minReserve0: 1e18,              // Minimum token0 reserve
+    minReserve1: 1e18,              // Minimum token1 reserve
+    priceX: 1e18,                   // Price numerator (1:1 ratio for same-value tokens)
+    priceY: 1e18,                   // Price denominator
+    concentrationX: 0.4e18,         // Liquidity concentration X (0 to <1e18, higher = more concentrated)
+    concentrationY: 0.85e18,        // Liquidity concentration Y (asymmetric is common)
+    fee0: 0.003e18,                 // Fee for selling token0 (0.3%)
+    fee1: 0.003e18,                 // Fee for selling token1 (0.3%)
+    expiration: 0,                  // 0 = no expiration
+    swapHookedOperations: 0,        // Bitfield of hooked operations
+    swapHook: address(0)            // Hook contract (0 = none)
+});
+
+// For WETH/USDC with different decimals (18 vs 6):
+// equilibriumReserve0: 50e6   (50 USDC with 6 decimals)
+// equilibriumReserve1: 60e18  (60 WETH with 18 decimals)
+// priceX: 1e18                (price numerator)
+// priceY: 1e6                 (matches USDC decimals for proper scaling)
+
+// InitialState defines starting reserves (usually matches equilibrium or nearby)
+IEulerSwap.InitialState memory initialState = IEulerSwap.InitialState({
+    reserve0: 60e18,     // Starting token0 (matches equilibrium)
+    reserve1: 60e18      // Starting token1 (matches equilibrium)
+});
+
+// Deploy the pool
+bytes32 salt = bytes32(0);  // Or unique salt for deterministic address
+address pool = factory.deployPool(sParams, dParams, initialState, salt);
+```
+
+**Correct: TypeScript pool deployment**
+
+```typescript
+import { encodeFunctionData } from 'viem';
+
+// Define static params
+const staticParams = {
+  supplyVault0: wethVaultAddress,
+  supplyVault1: usdcVaultAddress,
+  borrowVault0: wethVaultAddress,
+  borrowVault1: usdcVaultAddress,
+  eulerAccount: lpSubAccount,
+  feeRecipient: treasuryAddress,
+};
+
+// Define dynamic params (matching test patterns)
+const dynamicParams = {
+  equilibriumReserve0: 60n * 10n ** 18n,      // 60 units token0
+  equilibriumReserve1: 60n * 10n ** 18n,      // 60 units token1
+  minReserve0: 1n * 10n ** 18n,
+  minReserve1: 1n * 10n ** 18n,
+  priceX: 1n * 10n ** 18n,                    // 1:1 price ratio
+  priceY: 1n * 10n ** 18n,
+  concentrationX: 4n * 10n ** 17n,            // 0.4e18 - common test value
+  concentrationY: 85n * 10n ** 16n,           // 0.85e18 - common test value
+  fee0: 3n * 10n ** 15n,                      // 0.3%
+  fee1: 3n * 10n ** 15n,
+  expiration: 0n,
+  swapHookedOperations: 0,
+  swapHook: zeroAddress,
+};
+
+// Define initial state (matches equilibrium)
+const initialState = {
+  reserve0: 60n * 10n ** 18n,
+  reserve1: 60n * 10n ** 18n,
+};
+
+// Deploy pool
+const poolAddress = await factory.write.deployPool([
+  staticParams,
+  dynamicParams,
+  initialState,
+  '0x0000000000000000000000000000000000000000000000000000000000000000',
+]);
+```
+
+**Correct: computing pool address before deployment**
+
+```solidity
+// Compute deterministic pool address before deployment
+address predictedPool = factory.computePoolAddress(sParams, salt);
+
+// Verify pool was deployed by factory
+bool isValid = factory.deployedPools(poolAddress);
+```
+
+**Correct: setting up LP position**
+
+```solidity
+// Before deployment, LP needs to:
+// 1. Set up EVC sub-account for the pool
+// 2. Enable collaterals and controllers
+// 3. Deposit initial liquidity into vaults
+
+// The eulerAccount in StaticParams should be an EVC sub-account
+address lpSubAccount = getSubAccount(lpAddress, 1);  // Sub-account index 1
+
+// Enable vaults as collateral for the LP account
+evc.enableCollateral(lpSubAccount, supplyVault0);
+evc.enableCollateral(lpSubAccount, supplyVault1);
+
+// Enable borrow vaults as controllers
+evc.enableController(lpSubAccount, borrowVault0);
+evc.enableController(lpSubAccount, borrowVault1);
+
+// Deposit initial liquidity
+IERC20(weth).approve(supplyVault0, initialWeth);
+IEVault(supplyVault0).deposit(initialWeth, lpSubAccount);
+
+IERC20(usdc).approve(supplyVault1, initialUsdc);
+IEVault(supplyVault1).deposit(initialUsdc, lpSubAccount);
+
+// Now deploy the pool with this account
+```
+
+**Pool Architecture:**
+
+| Component | Purpose |
+
+|-----------|---------|
+
+| supplyVault0/1 | LP deposits here, earns lending yield |
+
+| borrowVault0/1 | Pool borrows from here when providing output tokens |
+
+| eulerAccount | EVC sub-account holding the LP position |
+
+| feeRecipient | Receives trading fees |
+
+| equilibriumReserve | Target reserve amounts for balanced state |
+
+| minReserve | Minimum reserves to maintain liquidity |
+
+| priceX/priceY | Price ratio (adjust for different token decimals) |
+
+| concentrationX/Y | Curve shape (0 to <1e18, higher = more concentrated liquidity) |
+
+| fee0/1 | Trading fee for each direction (e.g., 0.003e18 = 0.3%) |
+
+**Important Considerations:**
+
+```solidity
+// 1. eulerAccount must have proper vault permissions before pool deployment
+// 2. LP is responsible for managing health of the position
+// 3. Pool can be decommissioned by LP when reserves reach minReserves
+// 4. Hooks can add custom logic (access control, MEV protection, etc.)
+
+// Query pool configuration
+IEulerSwap.StaticParams memory staticParams = pool.getStaticParams();
+IEulerSwap.DynamicParams memory dynamicParams = pool.getDynamicParams();
+
+// Check if pool is still active
+bool isActive = dynamicParams.expiration == 0 || block.timestamp < dynamicParams.expiration;
+
+// Pool creator can reconfigure dynamic params
+pool.reconfigure(newDynamicParams, newInitialState);  // Only eulerAccount owner can call
+```
+
+Reference: [https://github.com/euler-xyz/euler-swap](https://github.com/euler-xyz/euler-swap), [https://github.com/euler-xyz/euler-swap/blob/master/src/EulerSwapFactory.sol](https://github.com/euler-xyz/euler-swap/blob/master/src/EulerSwapFactory.sol)
+
+### 11.3 Execute Swaps on EulerSwap
 
 **Impact: MEDIUM (Token swaps via Euler liquidity)**
 
@@ -5855,7 +6242,7 @@ Key points:
 
 Reference: [https://github.com/euler-xyz/euler-swap#for-solvers](https://github.com/euler-xyz/euler-swap#for-solvers)
 
-### 11.3 Get Swap Quotes from EulerSwap
+### 11.4 Get Swap Quotes from EulerSwap
 
 **Impact: MEDIUM (Price discovery for swap execution)**
 

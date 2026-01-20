@@ -122,7 +122,7 @@ const setupCalls = [
   }),
   encodeFunctionData({
     abi: eulerEarnABI,
-    functionName: 'setGuardian',
+    functionName: 'submitGuardian',
     args: [guardianAddress],
   }),
 ];
@@ -163,4 +163,49 @@ earn.acceptCap(escrowVault);
 // Funds only go here if other strategies are full
 ```
 
-Reference: [EulerEarn README](https://github.com/euler-xyz/euler-earn#readme)
+---
+
+## EulerEarnFactory Query Functions
+
+The factory provides useful functions for discovering and validating EulerEarn vaults:
+
+```solidity
+import {EulerEarnFactory} from "euler-earn/EulerEarnFactory.sol";
+
+EulerEarnFactory factory = EulerEarnFactory(factoryAddress);
+
+// Check if an address is an EulerEarn vault deployed by this factory
+bool isEarnVault = factory.isVault(vaultAddress);
+
+// Check if a strategy is allowed (verified by perspective OR is an EulerEarn vault)
+// Strategies must pass this check to be added to an EulerEarn vault
+bool allowed = factory.isStrategyAllowed(strategyAddress);
+
+// Get the perspective used for strategy verification
+address perspective = factory.supportedPerspective();
+
+// Get total number of deployed vaults
+uint256 count = factory.getVaultListLength();
+
+// Get a slice of deployed vaults (for pagination)
+// Use type(uint256).max for end to get all remaining
+address[] memory vaults = factory.getVaultListSlice(0, 10);  // First 10
+address[] memory allVaults = factory.getVaultListSlice(0, type(uint256).max);  // All
+```
+
+```typescript
+// TypeScript: Query factory for deployed vaults
+const vaultCount = await factory.read.getVaultListLength();
+console.log(`Total EulerEarn vaults: ${vaultCount}`);
+
+// Check if strategy can be used
+const canUseStrategy = await factory.read.isStrategyAllowed([strategyAddress]);
+if (!canUseStrategy) {
+  console.error('Strategy not verified by perspective');
+}
+
+// Get all deployed vaults
+const allVaults = await factory.read.getVaultListSlice([0n, BigInt(2n ** 256n - 1n)]);
+```
+
+Reference: [EulerEarn README](https://github.com/euler-xyz/euler-earn#readme), [EulerEarnFactory.sol](https://github.com/euler-xyz/euler-earn/blob/master/src/EulerEarnFactory.sol)

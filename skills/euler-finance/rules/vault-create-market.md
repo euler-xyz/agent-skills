@@ -24,12 +24,14 @@ import {GenericFactory} from "evk/GenericFactory/GenericFactory.sol";
 import {IEVault} from "evk/EVault/IEVault.sol";
 
 // Step 1: Deploy or select an Interest Rate Model
-address irm = irmFactory.deploy(
-    baseRate,    // e.g., 0 for 0% base rate
-    slope1,      // e.g., 4e27 for 4% at kink
-    slope2,      // e.g., 300e27 for 300% max
-    kink         // e.g., 0.9e18 for 90% utilization
+// Using EulerKinkIRMFactory - kink is uint32 on type(uint32).max scale
+address irm = EulerKinkIRMFactory(kinkIRMFactory).deploy(
+    0,            // baseRate: 0% at 0 utilization
+    1406417851,   // slope1: ~10% APY at kink (in SPY)
+    19050045013,  // slope2: ~300% APY at 100% utilization (in SPY)
+    3865470566    // kink: 90% utilization (type(uint32).max * 9 / 10)
 );
+// See irm-models rule for detailed IRM configuration
 
 // Step 2: Deploy or configure an oracle
 address oracle = eulerRouter; // EulerRouter configured for this asset
@@ -69,13 +71,44 @@ vault.setLTV(
 );
 
 // Set caps to limit exposure (uint16 AmountCap encoding)
-// AmountCap format: 10 bits mantissa + 6 bits exponent
-// Use encodeAmountCap helper or pre-calculated values
-// Example: supplyCap=7059 ≈ 11e18, borrowCap=38418 ≈ 5e18
+// AmountCap format: upper 10 bits mantissa + lower 6 bits exponent
+// Formula: 10^exponent * mantissa / 100
+// Encoding: (mantissa << 6) | exponent
+//
+// IMPORTANT: Caps are in raw token units - you MUST account for decimals!
+//
+// Special values:
+//   - 0: NO CAP (unlimited) - uninitialized storage default
+//   - 1: ZERO CAP (blocks all deposits/borrows) - mantissa=0, exp=1
+//
+// For 18-decimal tokens (ETH, DAI, etc.):
+//   - 100 tokens = 100e18:  exp=20, mantissa=100 → (100 << 6) | 20 = 6420
+//   - 1000 tokens = 1000e18: exp=21, mantissa=100 → (100 << 6) | 21 = 6421
+//
+// For 6-decimal tokens (USDC, USDT, etc.):
+//   - 100 tokens = 100e6:   exp=8, mantissa=100 → (100 << 6) | 8 = 6408
+//   - 1000 tokens = 1000e6: exp=9, mantissa=100 → (100 << 6) | 9 = 6409
+//   - 1M tokens = 1e12:     exp=12, mantissa=100 → (100 << 6) | 12 = 6412
+//
+// For 8-decimal tokens (WBTC):
+//   - 100 tokens = 100e8:   exp=10, mantissa=100 → (100 << 6) | 10 = 6410
+
+// Example: 18-decimal token vault
 vault.setCaps(
-    7059,   // ~11e18 supply cap (see AmountCap encoding docs)
-    38418   // ~5e18 borrow cap
+    6420,   // 100 tokens supply cap (100e18 for 18-decimal token)
+    6419    // 10 tokens borrow cap (10e18 for 18-decimal token)
 );
+
+// Example: 6-decimal token vault (USDC)
+// vault.setCaps(6412, 6411);  // 1M supply cap, 100k borrow cap
+
+// Zero caps work the same for ANY token (6, 8, or 18 decimals):
+// The value 1 always resolves to 0 (mantissa=0, exp=1 → 10^1 * 0 / 100 = 0)
+
+vault.setCaps(0, 1);  // Disable borrowing: unlimited supply, zero borrow cap
+vault.setCaps(1, 0);  // Disable deposits: zero supply cap, unlimited borrow  
+vault.setCaps(1, 1);  // Disable both: zero supply cap, zero borrow cap
+
 // NOTE: Use VaultLens to decode caps to human-readable amounts
 
 // Set interest fee (protocol revenue)

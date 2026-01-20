@@ -24,8 +24,9 @@ IEVault(vault).setOracle(specificOracleAdapter);
 import {EulerRouter} from "euler-price-oracle/EulerRouter.sol";
 import {EulerRouterFactory} from "evk-periphery/EulerRouterFactory/EulerRouterFactory.sol";
 
-// Deploy router via factory (requires EVC address)
-address router = EulerRouterFactory(factory).deploy(evc, governor);
+// Deploy router via factory
+// Note: Factory was initialized with EVC address in its constructor
+address router = EulerRouterFactory(factory).deploy(governor);
 
 // Configure pricing for asset pairs
 EulerRouter eulerRouter = EulerRouter(router);

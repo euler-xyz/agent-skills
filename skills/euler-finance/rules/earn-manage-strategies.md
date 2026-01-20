@@ -2,22 +2,24 @@
 title: Manage EulerEarn Strategies
 impact: MEDIUM
 impactDescription: Optimize yield through strategy allocation
-tags: earn, strategies, allocation, reallocate, queue
+tags: earn, strategies, allocation, reallocate, queue, publicallocator
 ---
 
 ## Manage EulerEarn Strategies
 
 Strategy management involves adjusting allocations across ERC-4626 vaults to optimize yield while maintaining risk parameters. This is done by curators and allocators.
 
-**Incorrect (reallocating without checking liquidity):**
+**Incorrect (wrong function signature and no liquidity check):**
 
 ```solidity
-// This may fail if strategy doesn't have enough liquidity
+// ERROR: Wrong signature! reallocate takes MarketAllocation[] struct array
+// Also doesn't check if strategy has enough liquidity
 earn.reallocate(
     [strategyA, strategyB],
-    [type(uint256).max, 0]  // Withdraw all from A
+    [type(uint256).max, 0]  // Wrong! This is not valid syntax
 );
-// Error: strategy may have utilization, funds locked
+// The actual function takes: reallocate(MarketAllocation[] memory allocations)
+// where MarketAllocation has { IERC4626 id; uint256 assets; }
 ```
 
 **Correct (check liquidity before reallocating):**
@@ -214,6 +216,150 @@ Key considerations:
 - Monitor strategy APYs and adjust allocations
 - Keep some allocation in liquid/idle vault for withdrawals
 
+---
+
+## PublicAllocator: Permissionless Reallocation
+
+PublicAllocator enables anyone to trigger reallocations on EulerEarn vaults within admin-configured flow caps. This allows third parties (bots, keepers, MEV searchers) to optimize allocations without requiring allocator permissions.
+
+**Correct (admin configuring PublicAllocator):**
+
+```solidity
+import {IPublicAllocator, FlowCapsConfig, FlowCaps} from "euler-earn/interfaces/IPublicAllocator.sol";
+
+IPublicAllocator publicAllocator = IPublicAllocator(publicAllocatorAddress);
+
+// Only vault owner or PublicAllocator admin can configure
+// Set admin for this vault (optional - owner can always configure)
+publicAllocator.setAdmin(earnVault, adminAddress);
+
+// Set fee for public reallocations (in wei, paid by caller)
+publicAllocator.setFee(earnVault, 0.001 ether);
+
+// Configure flow caps per strategy
+// maxIn: max assets that can flow INTO this strategy via public reallocation
+// maxOut: max assets that can flow OUT OF this strategy via public reallocation
+FlowCapsConfig[] memory configs = new FlowCapsConfig[](2);
+
+configs[0] = FlowCapsConfig({
+    id: IERC4626(strategyA),
+    caps: FlowCaps({
+        maxIn: 100_000e6,   // Allow up to 100k USDC to flow in
+        maxOut: 50_000e6    // Allow up to 50k USDC to flow out
+    })
+});
+
+configs[1] = FlowCapsConfig({
+    id: IERC4626(strategyB),
+    caps: FlowCaps({
+        maxIn: 200_000e6,
+        maxOut: 100_000e6
+    })
+});
+
+publicAllocator.setFlowCaps(earnVault, configs);
+```
+
+**Correct (public reallocation by anyone):**
+
+```solidity
+import {IPublicAllocator, Withdrawal} from "euler-earn/interfaces/IPublicAllocator.sol";
+
+// Anyone can call reallocateTo if they pay the fee
+// This moves assets FROM withdrawal strategies TO a supply strategy
+
+// Step 1: Get the fee
+uint256 fee = publicAllocator.fee(earnVault);
+
+// Step 2: Prepare withdrawals (must be sorted by address, ascending)
+// Withdrawal struct: { IERC4626 id; uint128 amount; }
+Withdrawal[] memory withdrawals = new Withdrawal[](2);
+withdrawals[0] = Withdrawal({
+    id: IERC4626(lowYieldStrategy),
+    amount: 10_000e6  // Withdraw 10k from this strategy
+});
+withdrawals[1] = Withdrawal({
+    id: IERC4626(anotherLowYieldStrategy),
+    amount: 5_000e6   // Withdraw 5k from this strategy
+});
+
+// IMPORTANT: Withdrawals must be sorted by address (ascending)
+// and the supplyId cannot be in the withdrawals array
+
+// Step 3: Execute reallocation (paying the fee)
+publicAllocator.reallocateTo{value: fee}(
+    earnVault,
+    withdrawals,
+    IERC4626(highYieldStrategy)  // Deposit all withdrawn assets here
+);
+
+// Flow caps are automatically updated:
+// - Withdrawn strategies: maxIn increases, maxOut decreases
+// - Supply strategy: maxIn decreases, maxOut increases
+```
+
+**Correct (TypeScript public reallocation):**
+
+```typescript
+import { encodeFunctionData, parseEther } from 'viem';
+
+// Check flow caps before attempting reallocation
+const [maxIn, maxOut] = await publicAllocator.read.flowCaps([
+  earnVault,
+  strategyAddress,
+]);
+
+console.log(`Strategy flow caps: maxIn=${maxIn}, maxOut=${maxOut}`);
+
+// Get fee
+const fee = await publicAllocator.read.fee([earnVault]);
+
+// Prepare withdrawals (sorted by address!)
+const withdrawals = [
+  { id: lowYieldStrategy, amount: 10000n * 10n ** 6n },
+].sort((a, b) => a.id.toLowerCase().localeCompare(b.id.toLowerCase()));
+
+// Execute public reallocation
+await publicAllocator.write.reallocateTo(
+  [earnVault, withdrawals, highYieldStrategy],
+  { value: fee }
+);
+```
+
+**Correct (claiming accrued fees as admin):**
+
+```solidity
+// Check accrued fees
+uint256 accrued = publicAllocator.accruedFee(earnVault);
+
+// Transfer fees to recipient (only admin or vault owner)
+publicAllocator.transferFee(earnVault, payable(feeRecipient));
+```
+
+**PublicAllocator Key Points:**
+
+| Aspect | Details |
+|--------|---------|
+| Who can configure | Vault owner or designated admin |
+| Who can reallocate | Anyone (permissionless) |
+| Fee | Paid in ETH by caller, set per vault |
+| Flow caps | Per-strategy limits on in/out flows |
+| Sorting | Withdrawals must be sorted by address (ascending) |
+| Restrictions | Cannot include supplyId in withdrawals; strategies must be enabled |
+
+**Common Errors:**
+
+```solidity
+// IncorrectFee: msg.value doesn't match configured fee
+// EmptyWithdrawals: No withdrawals provided
+// MarketNotEnabled: Strategy not in earn vault
+// InconsistentWithdrawals: Not sorted by address or duplicates
+// DepositMarketInWithdrawals: supplyId appears in withdrawals
+// MaxOutflowExceeded: Trying to withdraw more than maxOut
+// MaxInflowExceeded: Trying to deposit more than maxIn
+// NotEnoughSupply: Strategy doesn't have enough assets
+```
+
 See also: [Lens Contracts](tools-lens) - EulerEarnVaultLens provides `getVaultInfoFull()` to query all strategies and their allocations.
 
-Reference: [EulerEarn Roles](https://github.com/euler-xyz/euler-earn#roles)
+Reference: [EulerEarn Roles](https://github.com/euler-xyz/euler-earn#roles), [PublicAllocator.sol](https://github.com/euler-xyz/euler-earn/blob/master/src/PublicAllocator.sol)

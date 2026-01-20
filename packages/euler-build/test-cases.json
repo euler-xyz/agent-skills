@@ -211,7 +211,7 @@
     "ruleId": "",
     "ruleTitle": "Create an EulerEarn Vault",
     "type": "good",
-    "code": "import { encodeFunctionData } from 'viem';\n\n// Deploy earn vault via factory\nconst earnVaultAddress = await eulerEarnFactory.write.createEulerEarn([\n  ownerAddress,          // initialOwner\n  0n,                    // initialTimelock\n  usdcAddress,           // asset\n  'Euler USDC Earn',     // name\n  'eUSDC',               // symbol\n  '0x0000000000000000000000000000000000000000000000000000000000000000', // salt\n]);\n\n// Configure in batch\nconst setupCalls = [\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'setFeeRecipient',\n    args: [treasuryAddress],\n  }),\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'setFee',\n    args: [0.1e18], // 10%\n  }),\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'setCurator',\n    args: [curatorAddress],\n  }),\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'setGuardian',\n    args: [guardianAddress],\n  }),\n];\n\n// Execute setup\nfor (const call of setupCalls) {\n  await ownerWallet.sendTransaction({\n    to: earnVaultAddress,\n    data: call,\n  });\n}",
+    "code": "import { encodeFunctionData } from 'viem';\n\n// Deploy earn vault via factory\nconst earnVaultAddress = await eulerEarnFactory.write.createEulerEarn([\n  ownerAddress,          // initialOwner\n  0n,                    // initialTimelock\n  usdcAddress,           // asset\n  'Euler USDC Earn',     // name\n  'eUSDC',               // symbol\n  '0x0000000000000000000000000000000000000000000000000000000000000000', // salt\n]);\n\n// Configure in batch\nconst setupCalls = [\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'setFeeRecipient',\n    args: [treasuryAddress],\n  }),\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'setFee',\n    args: [0.1e18], // 10%\n  }),\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'setCurator',\n    args: [curatorAddress],\n  }),\n  encodeFunctionData({\n    abi: eulerEarnABI,\n    functionName: 'submitGuardian',\n    args: [guardianAddress],\n  }),\n];\n\n// Execute setup\nfor (const call of setupCalls) {\n  await ownerWallet.sendTransaction({\n    to: earnVaultAddress,\n    data: call,\n  });\n}",
     "language": "typescript",
     "description": "TypeScript vault creation"
   },
@@ -219,9 +219,9 @@
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "bad",
-    "code": "// This may fail if strategy doesn't have enough liquidity\nearn.reallocate(\n    [strategyA, strategyB],\n    [type(uint256).max, 0]  // Withdraw all from A\n);\n// Error: strategy may have utilization, funds locked",
+    "code": "// ERROR: Wrong signature! reallocate takes MarketAllocation[] struct array\n// Also doesn't check if strategy has enough liquidity\nearn.reallocate(\n    [strategyA, strategyB],\n    [type(uint256).max, 0]  // Wrong! This is not valid syntax\n);\n// The actual function takes: reallocate(MarketAllocation[] memory allocations)\n// where MarketAllocation has { IERC4626 id; uint256 assets; }",
     "language": "solidity",
-    "description": "reallocating without checking liquidity"
+    "description": "wrong function signature and no liquidity check"
   },
   {
     "ruleId": "",
@@ -270,6 +270,38 @@
     "code": "interface StrategyMetrics {\n  address: Address;\n  allocation: bigint;\n  apy: number;\n  utilization: number;\n  liquidity: bigint;\n}\n\nasync function getStrategyMetrics(\n  earn: Address,\n  strategy: Address\n): Promise<StrategyMetrics> {\n  const allocation = await IERC4626(strategy).balanceOf(earn);\n  const vaultInfo = await vaultLens.getVaultInfoDynamic(strategy);\n  \n  return {\n    address: strategy,\n    allocation,\n    apy: vaultInfo.irmInfo.interestRateInfo[0].supplyAPY / 1e25,\n    utilization: vaultInfo.totalBorrowed / vaultInfo.totalAssets,\n    liquidity: vaultInfo.totalCash,\n  };\n}\n\nasync function optimizeAllocation(earn: Address) {\n  const strategies = await earn.withdrawQueue();\n  const metrics = await Promise.all(\n    strategies.map(s => getStrategyMetrics(earn, s))\n  );\n  \n  // Sort by APY descending\n  const byApy = [...metrics].sort((a, b) => b.apy - a.apy);\n  \n  // Reallocate to higher-yield strategies (respecting caps and liquidity)\n  for (const highYield of byApy.slice(0, 3)) {\n    const cap = await earn.caps(highYield.address);\n    const headroom = cap - highYield.allocation;\n    \n    if (headroom > MIN_REALLOCATION) {\n      // Find lower-yield strategy to pull from\n      const lowYield = byApy[byApy.length - 1];\n      const moveAmount = min(headroom, lowYield.liquidity);\n      \n      if (moveAmount > MIN_REALLOCATION) {\n        // Reallocate: reduce low yield, increase high yield\n        const allocations = [\n          { id: lowYield.address, assets: lowYield.allocation - moveAmount },\n          { id: highYield.address, assets: type(uint256).max },\n        ];\n        await earn.write.reallocate([allocations]);\n      }\n    }\n  }\n}",
     "language": "typescript",
     "description": "monitoring and rebalancing"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Manage EulerEarn Strategies",
+    "type": "good",
+    "code": "import {IPublicAllocator, FlowCapsConfig, FlowCaps} from \"euler-earn/interfaces/IPublicAllocator.sol\";\n\nIPublicAllocator publicAllocator = IPublicAllocator(publicAllocatorAddress);\n\n// Only vault owner or PublicAllocator admin can configure\n// Set admin for this vault (optional - owner can always configure)\npublicAllocator.setAdmin(earnVault, adminAddress);\n\n// Set fee for public reallocations (in wei, paid by caller)\npublicAllocator.setFee(earnVault, 0.001 ether);\n\n// Configure flow caps per strategy\n// maxIn: max assets that can flow INTO this strategy via public reallocation\n// maxOut: max assets that can flow OUT OF this strategy via public reallocation\nFlowCapsConfig[] memory configs = new FlowCapsConfig[](2);\n\nconfigs[0] = FlowCapsConfig({\n    id: IERC4626(strategyA),\n    caps: FlowCaps({\n        maxIn: 100_000e6,   // Allow up to 100k USDC to flow in\n        maxOut: 50_000e6    // Allow up to 50k USDC to flow out\n    })\n});\n\nconfigs[1] = FlowCapsConfig({\n    id: IERC4626(strategyB),\n    caps: FlowCaps({\n        maxIn: 200_000e6,\n        maxOut: 100_000e6\n    })\n});\n\npublicAllocator.setFlowCaps(earnVault, configs);",
+    "language": "solidity",
+    "description": "admin configuring PublicAllocator"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Manage EulerEarn Strategies",
+    "type": "good",
+    "code": "import {IPublicAllocator, Withdrawal} from \"euler-earn/interfaces/IPublicAllocator.sol\";\n\n// Anyone can call reallocateTo if they pay the fee\n// This moves assets FROM withdrawal strategies TO a supply strategy\n\n// Step 1: Get the fee\nuint256 fee = publicAllocator.fee(earnVault);\n\n// Step 2: Prepare withdrawals (must be sorted by address, ascending)\n// Withdrawal struct: { IERC4626 id; uint128 amount; }\nWithdrawal[] memory withdrawals = new Withdrawal[](2);\nwithdrawals[0] = Withdrawal({\n    id: IERC4626(lowYieldStrategy),\n    amount: 10_000e6  // Withdraw 10k from this strategy\n});\nwithdrawals[1] = Withdrawal({\n    id: IERC4626(anotherLowYieldStrategy),\n    amount: 5_000e6   // Withdraw 5k from this strategy\n});\n\n// IMPORTANT: Withdrawals must be sorted by address (ascending)\n// and the supplyId cannot be in the withdrawals array\n\n// Step 3: Execute reallocation (paying the fee)\npublicAllocator.reallocateTo{value: fee}(\n    earnVault,\n    withdrawals,\n    IERC4626(highYieldStrategy)  // Deposit all withdrawn assets here\n);\n\n// Flow caps are automatically updated:\n// - Withdrawn strategies: maxIn increases, maxOut decreases\n// - Supply strategy: maxIn decreases, maxOut increases",
+    "language": "solidity",
+    "description": "public reallocation by anyone"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Manage EulerEarn Strategies",
+    "type": "good",
+    "code": "import { encodeFunctionData, parseEther } from 'viem';\n\n// Check flow caps before attempting reallocation\nconst [maxIn, maxOut] = await publicAllocator.read.flowCaps([\n  earnVault,\n  strategyAddress,\n]);\n\nconsole.log(`Strategy flow caps: maxIn=${maxIn}, maxOut=${maxOut}`);\n\n// Get fee\nconst fee = await publicAllocator.read.fee([earnVault]);\n\n// Prepare withdrawals (sorted by address!)\nconst withdrawals = [\n  { id: lowYieldStrategy, amount: 10000n * 10n ** 6n },\n].sort((a, b) => a.id.toLowerCase().localeCompare(b.id.toLowerCase()));\n\n// Execute public reallocation\nawait publicAllocator.write.reallocateTo(\n  [earnVault, withdrawals, highYieldStrategy],\n  { value: fee }\n);",
+    "language": "typescript",
+    "description": "TypeScript public reallocation"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Manage EulerEarn Strategies",
+    "type": "good",
+    "code": "// Check accrued fees\nuint256 accrued = publicAllocator.accruedFee(earnVault);\n\n// Transfer fees to recipient (only admin or vault owner)\npublicAllocator.transferFee(earnVault, payable(feeRecipient));",
+    "language": "solidity",
+    "description": "claiming accrued fees as admin"
   },
   {
     "ruleId": "",
@@ -427,7 +459,7 @@
     "ruleId": "",
     "ruleTitle": "Interest Rate Model Types and Configuration",
     "type": "bad",
-    "code": "// WRONG: Using linear kink for a volatile asset that needs adaptive rates\n// This can lead to under/over-utilization and poor capital efficiency\naddress irm = kinkIRMFactory.deploy(\n    0,           // baseRate\n    4e27,        // slope1 (4%)\n    300e27,      // slope2 (300%)\n    0.9e18       // kink (90%)\n);\n// Static rates don't adapt to market conditions!",
+    "code": "// WRONG: Using linear kink for a volatile asset that needs adaptive rates\n// This can lead to under/over-utilization and poor capital efficiency\naddress irm = kinkIRMFactory.deploy(\n    0,           // baseRate\n    4e27,        // slope1 (too high!)\n    300e27,      // slope2 (too high!)\n    3865470566   // kink: 90% (type(uint32).max * 9 / 10)\n);\n// Static rates don't adapt to market conditions!",
     "language": "solidity",
     "description": "using wrong IRM for use case"
   },
@@ -451,7 +483,7 @@
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
-    "code": "import {EulerRouter} from \"euler-price-oracle/EulerRouter.sol\";\nimport {EulerRouterFactory} from \"evk-periphery/EulerRouterFactory/EulerRouterFactory.sol\";\n\n// Deploy router via factory (requires EVC address)\naddress router = EulerRouterFactory(factory).deploy(evc, governor);\n\n// Configure pricing for asset pairs\nEulerRouter eulerRouter = EulerRouter(router);\n\n// Set direct oracle for ETH/USD\n// Note: Assets are lexicographically sorted internally\neulerRouter.govSetConfig(\n    weth,                    // Base asset\n    usd,                     // Quote asset  \n    chainlinkEthUsdOracle    // Oracle adapter address\n);\n\n// Set direct oracle for BTC/USD\neulerRouter.govSetConfig(\n    wbtc,\n    usd,\n    chainlinkBtcUsdOracle\n);",
+    "code": "import {EulerRouter} from \"euler-price-oracle/EulerRouter.sol\";\nimport {EulerRouterFactory} from \"evk-periphery/EulerRouterFactory/EulerRouterFactory.sol\";\n\n// Deploy router via factory\n// Note: Factory was initialized with EVC address in its constructor\naddress router = EulerRouterFactory(factory).deploy(governor);\n\n// Configure pricing for asset pairs\nEulerRouter eulerRouter = EulerRouter(router);\n\n// Set direct oracle for ETH/USD\n// Note: Assets are lexicographically sorted internally\neulerRouter.govSetConfig(\n    weth,                    // Base asset\n    usd,                     // Quote asset  \n    chainlinkEthUsdOracle    // Oracle adapter address\n);\n\n// Set direct oracle for BTC/USD\neulerRouter.govSetConfig(\n    wbtc,\n    usd,\n    chainlinkBtcUsdOracle\n);",
     "language": "solidity",
     "description": "deploy and configure EulerRouter"
   },
@@ -766,6 +798,46 @@
     "code": "// 1. Always use EVC for cross-vault operations\n// This ensures proper status checks and atomicity\nIEVC evc = IEVC(EVC_ADDRESS);\n\nevc.batch(items); // Atomic, with deferred checks\n\n// 2. Check account health before and after operations\n(uint256 collateralValue, uint256 liabilityValue) = \n    IEVault(vault).accountLiquidity(account, false);\n\n// 3. Use approved oracles only\naddress oracle = IEVault(vault).oracle();\nrequire(isApprovedOracle(oracle), \"Unknown oracle\");\n\n// 4. Verify IRM is from known factory\naddress irm = IEVault(vault).interestRateModel();\nrequire(irmRegistry.isRegistered(irm), \"Unknown IRM\");",
     "language": "solidity",
     "description": "safe integration patterns"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy EulerSwap Pool",
+    "type": "bad",
+    "code": "// WRONG: EulerSwap pools are NOT like Uniswap pools\n// They use Euler vaults for liquidity, not raw token deposits\nfactory.createPair(tokenA, tokenB);  // Wrong interface!",
+    "language": "solidity",
+    "description": "using traditional AMM assumptions"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy EulerSwap Pool",
+    "type": "good",
+    "code": "import {IEulerSwapFactory} from \"euler-swap/interfaces/IEulerSwapFactory.sol\";\nimport {IEulerSwap} from \"euler-swap/interfaces/IEulerSwap.sol\";\n\nIEulerSwapFactory factory = IEulerSwapFactory(factoryAddress);\n\n// StaticParams define the vault structure (immutable after deployment)\nIEulerSwap.StaticParams memory sParams = IEulerSwap.StaticParams({\n    supplyVault0: wethVault,    // Vault for supplying token0 (earns yield)\n    supplyVault1: usdcVault,    // Vault for supplying token1 (earns yield)\n    borrowVault0: wethVault,    // Vault for borrowing token0 (when selling token1)\n    borrowVault1: usdcVault,    // Vault for borrowing token1 (when selling token0)\n    eulerAccount: lpAccount,    // EVC sub-account that holds the position\n    feeRecipient: treasury      // Address receiving trading fees\n});\n\n// DynamicParams define pool behavior (can be updated by LP)\n// Based on real test patterns from euler-swap test suite\nIEulerSwap.DynamicParams memory dParams = IEulerSwap.DynamicParams({\n    equilibriumReserve0: 60e18,     // Target reserve of token0 (60 units)\n    equilibriumReserve1: 60e18,     // Target reserve of token1 (60 units)\n    minReserve0: 1e18,              // Minimum token0 reserve\n    minReserve1: 1e18,              // Minimum token1 reserve\n    priceX: 1e18,                   // Price numerator (1:1 ratio for same-value tokens)\n    priceY: 1e18,                   // Price denominator\n    concentrationX: 0.4e18,         // Liquidity concentration X (0 to <1e18, higher = more concentrated)\n    concentrationY: 0.85e18,        // Liquidity concentration Y (asymmetric is common)\n    fee0: 0.003e18,                 // Fee for selling token0 (0.3%)\n    fee1: 0.003e18,                 // Fee for selling token1 (0.3%)\n    expiration: 0,                  // 0 = no expiration\n    swapHookedOperations: 0,        // Bitfield of hooked operations\n    swapHook: address(0)            // Hook contract (0 = none)\n});\n\n// For WETH/USDC with different decimals (18 vs 6):\n// equilibriumReserve0: 50e6   (50 USDC with 6 decimals)\n// equilibriumReserve1: 60e18  (60 WETH with 18 decimals)\n// priceX: 1e18                (price numerator)\n// priceY: 1e6                 (matches USDC decimals for proper scaling)\n\n// InitialState defines starting reserves (usually matches equilibrium or nearby)\nIEulerSwap.InitialState memory initialState = IEulerSwap.InitialState({\n    reserve0: 60e18,     // Starting token0 (matches equilibrium)\n    reserve1: 60e18      // Starting token1 (matches equilibrium)\n});\n\n// Deploy the pool\nbytes32 salt = bytes32(0);  // Or unique salt for deterministic address\naddress pool = factory.deployPool(sParams, dParams, initialState, salt);",
+    "language": "solidity",
+    "description": "deploy EulerSwap pool via factory"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy EulerSwap Pool",
+    "type": "good",
+    "code": "import { encodeFunctionData } from 'viem';\n\n// Define static params\nconst staticParams = {\n  supplyVault0: wethVaultAddress,\n  supplyVault1: usdcVaultAddress,\n  borrowVault0: wethVaultAddress,\n  borrowVault1: usdcVaultAddress,\n  eulerAccount: lpSubAccount,\n  feeRecipient: treasuryAddress,\n};\n\n// Define dynamic params (matching test patterns)\nconst dynamicParams = {\n  equilibriumReserve0: 60n * 10n ** 18n,      // 60 units token0\n  equilibriumReserve1: 60n * 10n ** 18n,      // 60 units token1\n  minReserve0: 1n * 10n ** 18n,\n  minReserve1: 1n * 10n ** 18n,\n  priceX: 1n * 10n ** 18n,                    // 1:1 price ratio\n  priceY: 1n * 10n ** 18n,\n  concentrationX: 4n * 10n ** 17n,            // 0.4e18 - common test value\n  concentrationY: 85n * 10n ** 16n,           // 0.85e18 - common test value\n  fee0: 3n * 10n ** 15n,                      // 0.3%\n  fee1: 3n * 10n ** 15n,\n  expiration: 0n,\n  swapHookedOperations: 0,\n  swapHook: zeroAddress,\n};\n\n// Define initial state (matches equilibrium)\nconst initialState = {\n  reserve0: 60n * 10n ** 18n,\n  reserve1: 60n * 10n ** 18n,\n};\n\n// Deploy pool\nconst poolAddress = await factory.write.deployPool([\n  staticParams,\n  dynamicParams,\n  initialState,\n  '0x0000000000000000000000000000000000000000000000000000000000000000',\n]);",
+    "language": "typescript",
+    "description": "TypeScript pool deployment"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy EulerSwap Pool",
+    "type": "good",
+    "code": "// Compute deterministic pool address before deployment\naddress predictedPool = factory.computePoolAddress(sParams, salt);\n\n// Verify pool was deployed by factory\nbool isValid = factory.deployedPools(poolAddress);",
+    "language": "solidity",
+    "description": "computing pool address before deployment"
+  },
+  {
+    "ruleId": "",
+    "ruleTitle": "Deploy EulerSwap Pool",
+    "type": "good",
+    "code": "// Before deployment, LP needs to:\n// 1. Set up EVC sub-account for the pool\n// 2. Enable collaterals and controllers\n// 3. Deposit initial liquidity into vaults\n\n// The eulerAccount in StaticParams should be an EVC sub-account\naddress lpSubAccount = getSubAccount(lpAddress, 1);  // Sub-account index 1\n\n// Enable vaults as collateral for the LP account\nevc.enableCollateral(lpSubAccount, supplyVault0);\nevc.enableCollateral(lpSubAccount, supplyVault1);\n\n// Enable borrow vaults as controllers\nevc.enableController(lpSubAccount, borrowVault0);\nevc.enableController(lpSubAccount, borrowVault1);\n\n// Deposit initial liquidity\nIERC20(weth).approve(supplyVault0, initialWeth);\nIEVault(supplyVault0).deposit(initialWeth, lpSubAccount);\n\nIERC20(usdc).approve(supplyVault1, initialUsdc);\nIEVault(supplyVault1).deposit(initialUsdc, lpSubAccount);\n\n// Now deploy the pool with this account",
+    "language": "solidity",
+    "description": "setting up LP position"
   },
   {
     "ruleId": "",
@@ -1139,7 +1211,7 @@
     "ruleId": "",
     "ruleTitle": "Create a New Vault/Market",
     "type": "good",
-    "code": "import {GenericFactory} from \"evk/GenericFactory/GenericFactory.sol\";\nimport {IEVault} from \"evk/EVault/IEVault.sol\";\n\n// Step 1: Deploy or select an Interest Rate Model\naddress irm = irmFactory.deploy(\n    baseRate,    // e.g., 0 for 0% base rate\n    slope1,      // e.g., 4e27 for 4% at kink\n    slope2,      // e.g., 300e27 for 300% max\n    kink         // e.g., 0.9e18 for 90% utilization\n);\n\n// Step 2: Deploy or configure an oracle\naddress oracle = eulerRouter; // EulerRouter configured for this asset\n\n// Step 3: Prepare vault initialization data (tightly packed, 60 bytes)\n// Format: 20 bytes asset + 20 bytes oracle + 20 bytes unitOfAccount\nbytes memory initData = abi.encodePacked(\n    asset,              // Underlying asset address (20 bytes)\n    oracle,             // Price oracle address (20 bytes)\n    unitOfAccount       // Unit of account (20 bytes, e.g., USD reference or address(0) for ETH)\n);\n\n// Step 4: Create the vault via factory\naddress vault = GenericFactory(factory).createProxy(\n    address(0),  // No specific salt (use msg.sender + nonce)\n    true,        // Upgradeable\n    initData\n);",
+    "code": "import {GenericFactory} from \"evk/GenericFactory/GenericFactory.sol\";\nimport {IEVault} from \"evk/EVault/IEVault.sol\";\n\n// Step 1: Deploy or select an Interest Rate Model\n// Using EulerKinkIRMFactory - kink is uint32 on type(uint32).max scale\naddress irm = EulerKinkIRMFactory(kinkIRMFactory).deploy(\n    0,            // baseRate: 0% at 0 utilization\n    1406417851,   // slope1: ~10% APY at kink (in SPY)\n    19050045013,  // slope2: ~300% APY at 100% utilization (in SPY)\n    3865470566    // kink: 90% utilization (type(uint32).max * 9 / 10)\n);\n// See irm-models rule for detailed IRM configuration\n\n// Step 2: Deploy or configure an oracle\naddress oracle = eulerRouter; // EulerRouter configured for this asset\n\n// Step 3: Prepare vault initialization data (tightly packed, 60 bytes)\n// Format: 20 bytes asset + 20 bytes oracle + 20 bytes unitOfAccount\nbytes memory initData = abi.encodePacked(\n    asset,              // Underlying asset address (20 bytes)\n    oracle,             // Price oracle address (20 bytes)\n    unitOfAccount       // Unit of account (20 bytes, e.g., USD reference or address(0) for ETH)\n);\n\n// Step 4: Create the vault via factory\naddress vault = GenericFactory(factory).createProxy(\n    address(0),  // No specific salt (use msg.sender + nonce)\n    true,        // Upgradeable\n    initData\n);",
     "language": "solidity",
     "description": "full vault deployment flow"
   },
@@ -1147,7 +1219,7 @@
     "ruleId": "",
     "ruleTitle": "Create a New Vault/Market",
     "type": "good",
-    "code": "IEVault vault = IEVault(vaultAddress);\n\n// Set interest rate model\nvault.setInterestRateModel(irm);\n\n// Configure LTV for accepted collaterals\n// borrowLTV: max LTV for new borrows\n// liquidationLTV: LTV at which liquidation can occur\nvault.setLTV(\n    collateralVault,     // Address of collateral vault\n    0.75e4,              // 75% borrow LTV\n    0.85e4,              // 85% liquidation LTV\n    0                    // No ramp (instant)\n);\n\n// Set caps to limit exposure (uint16 AmountCap encoding)\n// AmountCap format: 10 bits mantissa + 6 bits exponent\n// Use encodeAmountCap helper or pre-calculated values\n// Example: supplyCap=7059 ≈ 11e18, borrowCap=38418 ≈ 5e18\nvault.setCaps(\n    7059,   // ~11e18 supply cap (see AmountCap encoding docs)\n    38418   // ~5e18 borrow cap\n);\n// NOTE: Use VaultLens to decode caps to human-readable amounts\n\n// Set interest fee (protocol revenue)\nvault.setInterestFee(0.1e4); // 10% of interest goes to fee receiver\n\n// Set fee receiver\nvault.setFeeReceiver(feeRecipient);\n\n// Configure hooks if needed\nvault.setHookConfig(hookTarget, hookedOps);",
+    "code": "IEVault vault = IEVault(vaultAddress);\n\n// Set interest rate model\nvault.setInterestRateModel(irm);\n\n// Configure LTV for accepted collaterals\n// borrowLTV: max LTV for new borrows\n// liquidationLTV: LTV at which liquidation can occur\nvault.setLTV(\n    collateralVault,     // Address of collateral vault\n    0.75e4,              // 75% borrow LTV\n    0.85e4,              // 85% liquidation LTV\n    0                    // No ramp (instant)\n);\n\n// Set caps to limit exposure (uint16 AmountCap encoding)\n// AmountCap format: upper 10 bits mantissa + lower 6 bits exponent\n// Formula: 10^exponent * mantissa / 100\n// Encoding: (mantissa << 6) | exponent\n//\n// IMPORTANT: Caps are in raw token units - you MUST account for decimals!\n//\n// Special values:\n//   - 0: NO CAP (unlimited) - uninitialized storage default\n//   - 1: ZERO CAP (blocks all deposits/borrows) - mantissa=0, exp=1\n//\n// For 18-decimal tokens (ETH, DAI, etc.):\n//   - 100 tokens = 100e18:  exp=20, mantissa=100 → (100 << 6) | 20 = 6420\n//   - 1000 tokens = 1000e18: exp=21, mantissa=100 → (100 << 6) | 21 = 6421\n//\n// For 6-decimal tokens (USDC, USDT, etc.):\n//   - 100 tokens = 100e6:   exp=8, mantissa=100 → (100 << 6) | 8 = 6408\n//   - 1000 tokens = 1000e6: exp=9, mantissa=100 → (100 << 6) | 9 = 6409\n//   - 1M tokens = 1e12:     exp=12, mantissa=100 → (100 << 6) | 12 = 6412\n//\n// For 8-decimal tokens (WBTC):\n//   - 100 tokens = 100e8:   exp=10, mantissa=100 → (100 << 6) | 10 = 6410\n\n// Example: 18-decimal token vault\nvault.setCaps(\n    6420,   // 100 tokens supply cap (100e18 for 18-decimal token)\n    6419    // 10 tokens borrow cap (10e18 for 18-decimal token)\n);\n\n// Example: 6-decimal token vault (USDC)\n// vault.setCaps(6412, 6411);  // 1M supply cap, 100k borrow cap\n\n// Zero caps work the same for ANY token (6, 8, or 18 decimals):\n// The value 1 always resolves to 0 (mantissa=0, exp=1 → 10^1 * 0 / 100 = 0)\n\nvault.setCaps(0, 1);  // Disable borrowing: unlimited supply, zero borrow cap\nvault.setCaps(1, 0);  // Disable deposits: zero supply cap, unlimited borrow  \nvault.setCaps(1, 1);  // Disable both: zero supply cap, zero borrow cap\n\n// NOTE: Use VaultLens to decode caps to human-readable amounts\n\n// Set interest fee (protocol revenue)\nvault.setInterestFee(0.1e4); // 10% of interest goes to fee receiver\n\n// Set fee receiver\nvault.setFeeReceiver(feeRecipient);\n\n// Configure hooks if needed\nvault.setHookConfig(hookTarget, hookedOps);",
     "language": "solidity",
     "description": "configuring vault after deployment"
   },
