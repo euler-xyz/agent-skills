@@ -1,6 +1,6 @@
 # Sections
 
-This file defines the section for the euler-advanced skill.
+This file defines the section for the use-euler-feeflow-hooks-rewardEUL-flashloan skill.
 
 ---
 

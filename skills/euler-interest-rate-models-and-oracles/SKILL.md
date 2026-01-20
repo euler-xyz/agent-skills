@@ -1,5 +1,5 @@
 ---
-name: euler-irm-oracles
+name: euler-interest-rate-models-and-oracles
 description: Oracle and Interest Rate Model guide for Euler Finance V2. This skill should be used when deploying oracle adapters, configuring price resolution, querying prices, or understanding IRM types. Triggers on tasks involving Chainlink, Pyth, TWAP, price feeds, Linear Kink IRM, Adaptive Curve IRM, or interest rate configuration.
 license: MIT
 metadata:
@@ -52,11 +52,11 @@ Reference these guidelines when:
 
 ## Companion Skills
 
-- `euler-finance` - Core vault operations, EVC, risk management
-- `euler-earn` - Yield aggregation vaults
-- `euler-swap` - AMM integration
-- `euler-advanced` - Hooks, flash loans, fee flow
-- `euler-lens-data` - Lens contracts and data querying
+- `how-to-use-euler-vaults` - Core vault operations, EVC, risk management
+- `interact-with-euler-earn` - Yield aggregation vaults
+- `how-to-use-euler-swap` - AMM integration
+- `use-euler-feeflow-hooks-rewardEUL-flashloan` - Hooks, flash loans, fee flow
+- `how-to-fetch-euler-data-lens` - Lens contracts and data querying
 
 ## How to Use
 

@@ -1,5 +1,5 @@
 ---
-name: euler-earn
+name: interact-with-euler-earn
 description: EulerEarn yield aggregation guide for Euler Finance. This skill should be used when creating yield aggregation vaults, managing strategies, configuring roles, or using PublicAllocator. Triggers on tasks involving EulerEarn vaults, strategy allocation, yield optimization, or meta-vault management.
 license: MIT
 metadata:
@@ -49,11 +49,11 @@ Reference these guidelines when:
 
 ## Companion Skills
 
-- `euler-finance` - Core vault operations, EVC, risk management
-- `euler-irm-oracles` - Oracle adapters and interest rate models
-- `euler-swap` - AMM integration
-- `euler-advanced` - Hooks, flash loans, fee flow
-- `euler-lens-data` - Lens contracts and data querying
+- `how-to-use-euler-vaults` - Core vault operations, EVC, risk management
+- `euler-interest-rate-models-and-oracles` - Oracle adapters and interest rate models
+- `how-to-use-euler-swap` - AMM integration
+- `use-euler-feeflow-hooks-rewardEUL-flashloan` - Hooks, flash loans, fee flow
+- `how-to-fetch-euler-data-lens` - Lens contracts and data querying
 
 ## How to Use
 

@@ -1,6 +1,6 @@
 # Sections
 
-This file defines the section for the euler-earn skill.
+This file defines the section for the interact-with-euler-earn skill.
 
 ---
 

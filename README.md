@@ -6,7 +6,7 @@ Skills follow the [Agent Skills format](https://agentskills.io/home).
 
 ## Available Skills
 
-### euler-finance (Core)
+### how-to-use-euler-vaults (Core)
 
 Core guide for Euler Finance V2 protocol. Covers vault operations, EVC orchestration, risk management, architecture, and security.
 
@@ -14,31 +14,31 @@ Core guide for Euler Finance V2 protocol. Covers vault operations, EVC orchestra
 
 **Categories:** Vault Operations, EVC Operations, Risk Management, Architecture, Security
 
-### euler-irm-oracles
+### euler-interest-rate-models-and-oracles
 
 Oracle and Interest Rate Model guide. Covers deploying oracle adapters (Chainlink, Pyth, TWAP, etc.), configuring EulerRouter, and IRM types.
 
 **Use when:** Deploying oracle adapters, configuring price feeds, understanding IRM types (Linear Kink, Adaptive Curve).
 
-### euler-swap
+### how-to-use-euler-swap
 
 EulerSwap AMM integration guide. Covers pool deployment, quotes, liquidity limits, and swap execution.
 
 **Use when:** Deploying EulerSwap pools, getting swap quotes, executing swaps, managing LP positions.
 
-### euler-earn
+### interact-with-euler-earn
 
 EulerEarn yield aggregation guide. Covers vault creation, strategy management, roles, and PublicAllocator.
 
 **Use when:** Creating yield aggregation vaults, managing strategies, configuring roles, using PublicAllocator.
 
-### euler-advanced
+### use-euler-feeflow-hooks-rewardEUL-flashloan
 
 Advanced features guide. Covers hooks, flash loans, debt transfer, fee flow, and EUL rewards.
 
 **Use when:** Implementing vault hooks, using flash loans, understanding fee flow, working with EUL rewards.
 
-### euler-lens-data
+### how-to-fetch-euler-data-lens
 
 Developer tools and data access guide. Covers Lens contracts, subgraphs, contract interfaces, and deployment tools.
 
@@ -49,14 +49,14 @@ Developer tools and data access guide. Covers Lens contracts, subgraphs, contrac
 Install all skills:
 
 ```bash
-npx add-skill euler-xyz/agent-skills --skill euler-finance --skill euler-irm-oracles --skill euler-swap --skill euler-earn --skill euler-advanced --skill euler-lens-data
+npx add-skill euler-xyz/agent-skills --skill how-to-use-euler-vaults --skill euler-interest-rate-models-and-oracles --skill how-to-use-euler-swap --skill interact-with-euler-earn --skill use-euler-feeflow-hooks-rewardEUL-flashloan --skill how-to-fetch-euler-data-lens
 ```
 
 Install specific skill(s):
 
 ```bash
-npx add-skill euler-xyz/agent-skills --skill euler-finance
-npx add-skill euler-xyz/agent-skills --skill euler-finance --skill euler-irm-oracles
+npx add-skill euler-xyz/agent-skills --skill how-to-use-euler-vaults
+npx add-skill euler-xyz/agent-skills --skill how-to-use-euler-vaults --skill euler-interest-rate-models-and-oracles
 ```
 
 Interactive selection (prompts you to choose):
@@ -72,12 +72,12 @@ npx add-skill euler-xyz/agent-skills --list
 ```
 
 **Skill guide:**
-- `euler-finance` - Core operations (start here)
-- `euler-irm-oracles` - Oracle adapters and Interest Rate Models
-- `euler-swap` - EulerSwap AMM integration
-- `euler-earn` - Yield aggregation vaults
-- `euler-advanced` - Hooks, flash loans, fee flow, rewards
-- `euler-lens-data` - Lens contracts, subgraphs, developer tools
+- `how-to-use-euler-vaults` - Core operations (start here)
+- `euler-interest-rate-models-and-oracles` - Oracle adapters and Interest Rate Models
+- `how-to-use-euler-swap` - EulerSwap AMM integration
+- `interact-with-euler-earn` - Yield aggregation vaults
+- `use-euler-feeflow-hooks-rewardEUL-flashloan` - Hooks, flash loans, fee flow, rewards
+- `how-to-fetch-euler-data-lens` - Lens contracts, subgraphs, developer tools
 
 Or clone the repository directly:
 
@@ -143,7 +143,7 @@ pnpm validate     # Validate rule file structure for all skills
 Build a specific skill:
 
 ```bash
-pnpm build-agents -- --skill=euler-finance
+pnpm build-agents -- --skill=how-to-use-euler-vaults
 ```
 
 ## References

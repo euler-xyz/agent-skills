@@ -1,6 +1,6 @@
 [
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Understanding Euler Market Design",
     "type": "bad",
@@ -9,7 +9,7 @@
     "description": "assuming monolithic pool like Compound/Aave"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Understanding Euler Market Design",
     "type": "good",
@@ -18,7 +18,7 @@
     "description": "understanding independent vault architecture"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Understanding Euler Market Design",
     "type": "good",
@@ -27,7 +27,7 @@
     "description": "understanding the EVC layer"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Understanding Vault Types (Core, Edge, Escrow)",
     "type": "bad",
@@ -36,7 +36,7 @@
     "description": "treating all vaults the same"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Understanding Vault Types (Core, Edge, Escrow)",
     "type": "good",
@@ -45,7 +45,7 @@
     "description": "understanding vault types"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Understanding Vault Types (Core, Edge, Escrow)",
     "type": "good",
@@ -54,7 +54,7 @@
     "description": "using Perspectives to verify vault type"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Batch Multiple Operations Atomically",
     "type": "bad",
@@ -63,7 +63,7 @@
     "description": "separate transactions for each operation"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Batch Multiple Operations Atomically",
     "type": "good",
@@ -72,7 +72,7 @@
     "description": "batch all operations atomically"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Batch Multiple Operations Atomically",
     "type": "good",
@@ -81,7 +81,7 @@
     "description": "TypeScript with viem"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Batch Multiple Operations Atomically",
     "type": "good",
@@ -90,7 +90,7 @@
     "description": "flash loan style - borrow before collateral"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Enable Vault as Collateral",
     "type": "bad",
@@ -99,7 +99,7 @@
     "description": "borrowing without enabling collateral"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Enable Vault as Collateral",
     "type": "good",
@@ -108,7 +108,7 @@
     "description": "enable collateral before borrowing"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Enable Vault as Collateral",
     "type": "good",
@@ -117,7 +117,7 @@
     "description": "batch enable multiple collaterals"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Enable Vault as Collateral",
     "type": "good",
@@ -126,7 +126,7 @@
     "description": "checking and disabling collateral"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Enable Vault as Collateral",
     "type": "good",
@@ -135,7 +135,7 @@
     "description": "reorder collaterals for gas optimization"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Delegate Control via Operators",
     "type": "bad",
@@ -144,7 +144,7 @@
     "description": "giving full wallet access"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Delegate Control via Operators",
     "type": "good",
@@ -153,7 +153,7 @@
     "description": "install operator for specific account"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Delegate Control via Operators",
     "type": "good",
@@ -162,7 +162,7 @@
     "description": "operator executing on behalf of account"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Delegate Control via Operators",
     "type": "good",
@@ -171,7 +171,7 @@
     "description": "TypeScript operator management"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Delegate Control via Operators",
     "type": "good",
@@ -180,7 +180,7 @@
     "description": "operator with limited scope via hooks"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Use Sub-Accounts for Isolated Positions",
     "type": "bad",
@@ -189,7 +189,7 @@
     "description": "using same account for multiple borrows"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Use Sub-Accounts for Isolated Positions",
     "type": "good",
@@ -198,7 +198,7 @@
     "description": "use sub-accounts for different borrows"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Use Sub-Accounts for Isolated Positions",
     "type": "good",
@@ -207,7 +207,7 @@
     "description": "helper function for sub-account calculation"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Use Sub-Accounts for Isolated Positions",
     "type": "good",
@@ -216,7 +216,7 @@
     "description": "rebalancing between sub-accounts in a batch"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Use Sub-Accounts for Isolated Positions",
     "type": "good",
@@ -225,7 +225,7 @@
     "description": "checking sub-account ownership"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Check Account Health Factor",
     "type": "bad",
@@ -234,7 +234,7 @@
     "description": "only checking debt amount"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Check Account Health Factor",
     "type": "good",
@@ -243,7 +243,7 @@
     "description": "using AccountLens for health check"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Check Account Health Factor",
     "type": "good",
@@ -252,7 +252,7 @@
     "description": "on-chain health check via vault"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Check Account Health Factor",
     "type": "good",
@@ -261,7 +261,7 @@
     "description": "calculating health factor manually"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Check Account Health Factor",
     "type": "good",
@@ -270,7 +270,7 @@
     "description": "setting up health monitoring"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Check Account Health Factor",
     "type": "good",
@@ -279,7 +279,7 @@
     "description": "using vault's accountLiquidity directly"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Check Account Health Factor",
     "type": "good",
@@ -288,7 +288,7 @@
     "description": "detailed breakdown with accountLiquidityFull"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Check Account Health Factor",
     "type": "good",
@@ -297,7 +297,7 @@
     "description": "disabling controller after full repayment"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Understanding Risk Curators and Vault Governance",
     "type": "bad",
@@ -306,7 +306,7 @@
     "description": "assuming anyone can configure vaults"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "How Liquidation Works on Euler",
     "type": "good",
@@ -315,7 +315,7 @@
     "description": "checking liquidation profitability"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "How Liquidation Works on Euler",
     "type": "good",
@@ -324,7 +324,7 @@
     "description": "executing liquidation"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Monitor Position Health",
     "type": "bad",
@@ -333,7 +333,7 @@
     "description": "checking health only at deposit/borrow time"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Monitor Position Health",
     "type": "good",
@@ -342,7 +342,7 @@
     "description": "comprehensive position monitoring"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Monitor Position Health",
     "type": "good",
@@ -351,7 +351,7 @@
     "description": "automated monitoring with alerts"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Monitor Position Health",
     "type": "good",
@@ -360,7 +360,7 @@
     "description": "on-chain monitoring with keeper"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Security and Audits",
     "type": "bad",
@@ -369,7 +369,7 @@
     "description": "ignoring security considerations"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Security and Audits",
     "type": "good",
@@ -378,7 +378,7 @@
     "description": "verifying vault authenticity"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Security and Audits",
     "type": "good",
@@ -387,7 +387,7 @@
     "description": "safe integration patterns"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Borrow Assets from a Vault",
     "type": "bad",
@@ -396,7 +396,7 @@
     "description": "borrowing without enabling controller"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Borrow Assets from a Vault",
     "type": "bad",
@@ -405,7 +405,7 @@
     "description": "borrowing without collateral"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Borrow Assets from a Vault",
     "type": "good",
@@ -414,7 +414,7 @@
     "description": "full borrow flow"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Borrow Assets from a Vault",
     "type": "good",
@@ -423,7 +423,7 @@
     "description": "batched borrow via EVC for atomicity"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Create a New Vault/Market",
     "type": "bad",
@@ -432,7 +432,7 @@
     "description": "deploying vault without proper configuration"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Create a New Vault/Market",
     "type": "good",
@@ -441,7 +441,7 @@
     "description": "full vault deployment flow"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Create a New Vault/Market",
     "type": "good",
@@ -450,7 +450,7 @@
     "description": "configuring vault after deployment"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Create a New Vault/Market",
     "type": "good",
@@ -459,7 +459,7 @@
     "description": "using EVK deployment scripts"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Deposit Assets into a Vault",
     "type": "bad",
@@ -468,7 +468,7 @@
     "description": "forgetting to approve tokens first"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Deposit Assets into a Vault",
     "type": "good",
@@ -477,7 +477,7 @@
     "description": "approve then deposit"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Deposit Assets into a Vault",
     "type": "good",
@@ -486,7 +486,7 @@
     "description": "using Permit2 for gasless approvals"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Deposit Assets into a Vault",
     "type": "good",
@@ -495,7 +495,7 @@
     "description": "using mint instead of deposit"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Get Vault APY and Interest Rates",
     "type": "bad",
@@ -504,7 +504,7 @@
     "description": "reading raw interest rate without conversion"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Get Vault APY and Interest Rates",
     "type": "good",
@@ -513,7 +513,7 @@
     "description": "using VaultLens for complete APY data"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Get Vault APY and Interest Rates",
     "type": "good",
@@ -522,7 +522,7 @@
     "description": "calculating APY from SPY manually in Solidity"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Repay Borrowed Debt",
     "type": "bad",
@@ -531,7 +531,7 @@
     "description": "repaying exact original borrow amount"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Repay Borrowed Debt",
     "type": "good",
@@ -540,7 +540,7 @@
     "description": "query current debt and repay with buffer"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Repay Borrowed Debt",
     "type": "good",
@@ -549,7 +549,7 @@
     "description": "repay max to clear all debt"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Repay Borrowed Debt",
     "type": "good",
@@ -558,7 +558,7 @@
     "description": "partial repay to improve health factor"
   },
   {
-    "skill": "euler-finance",
+    "skill": "how-to-use-euler-vaults",
     "ruleId": "",
     "ruleTitle": "Repay Borrowed Debt",
     "type": "good",
@@ -567,7 +567,7 @@
     "description": "repay with vault shares instead of underlying"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Interest Rate Model Types and Configuration",
     "type": "bad",
@@ -576,7 +576,7 @@
     "description": "using wrong IRM for use case"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Interest Rate Model Types and Configuration",
     "type": "good",
@@ -585,7 +585,7 @@
     "description": "choosing appropriate IRM type"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "bad",
@@ -594,7 +594,7 @@
     "description": "hardcoding oracle in vault"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
@@ -603,7 +603,7 @@
     "description": "deploy and configure EulerRouter"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
@@ -612,7 +612,7 @@
     "description": "understanding resolution - NO automatic cross-pricing"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
@@ -621,7 +621,7 @@
     "description": "ERC-4626 vault share pricing"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
@@ -630,7 +630,7 @@
     "description": "TypeScript router configuration"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
@@ -639,7 +639,7 @@
     "description": "fallback configuration"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Configure EulerRouter for Price Resolution",
     "type": "good",
@@ -648,7 +648,7 @@
     "description": "querying existing configuration"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Deploy an Oracle Adapter",
     "type": "bad",
@@ -657,7 +657,7 @@
     "description": "using Chainlink directly without adapter"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Deploy an Oracle Adapter",
     "type": "good",
@@ -666,7 +666,7 @@
     "description": "deploy ChainlinkOracle adapter"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Deploy an Oracle Adapter",
     "type": "good",
@@ -675,7 +675,7 @@
     "description": "deploy PythOracle adapter"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Deploy an Oracle Adapter",
     "type": "good",
@@ -684,7 +684,7 @@
     "description": "deploy UniswapV3 TWAP oracle"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Deploy an Oracle Adapter",
     "type": "good",
@@ -693,7 +693,7 @@
     "description": "deploy rate provider oracle for LSTs"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Deploy an Oracle Adapter",
     "type": "good",
@@ -702,7 +702,7 @@
     "description": "deploy ChronicleOracle adapter"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Deploy an Oracle Adapter",
     "type": "good",
@@ -711,7 +711,7 @@
     "description": "deploy RedStoneOracle adapter"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Deploy an Oracle Adapter",
     "type": "good",
@@ -720,7 +720,7 @@
     "description": "deploy FixedRateOracle for stablecoins"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Deploy an Oracle Adapter",
     "type": "good",
@@ -729,7 +729,7 @@
     "description": "deploy CrossAdapter for chained pricing"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Deploy an Oracle Adapter",
     "type": "good",
@@ -738,7 +738,7 @@
     "description": "deploy PendleOracle for yield-bearing tokens"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Get Asset Prices from Oracles",
     "type": "bad",
@@ -747,7 +747,7 @@
     "description": "assuming unit price response"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Get Asset Prices from Oracles",
     "type": "good",
@@ -756,7 +756,7 @@
     "description": "using getQuote for amount conversion"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Get Asset Prices from Oracles",
     "type": "good",
@@ -765,7 +765,7 @@
     "description": "using OracleLens for comprehensive data"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Get Asset Prices from Oracles",
     "type": "good",
@@ -774,7 +774,7 @@
     "description": "bid/ask pricing for spreads"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Get Asset Prices from Oracles",
     "type": "good",
@@ -783,7 +783,7 @@
     "description": "handling oracle failures"
   },
   {
-    "skill": "euler-irm-oracles",
+    "skill": "euler-interest-rate-models-and-oracles",
     "ruleId": "",
     "ruleTitle": "Get Asset Prices from Oracles",
     "type": "good",
@@ -792,7 +792,7 @@
     "description": "calculating portfolio value"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Deploy EulerSwap Pool",
     "type": "bad",
@@ -801,7 +801,7 @@
     "description": "using traditional AMM assumptions"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Deploy EulerSwap Pool",
     "type": "good",
@@ -810,7 +810,7 @@
     "description": "deploy EulerSwap pool via factory"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Deploy EulerSwap Pool",
     "type": "good",
@@ -819,7 +819,7 @@
     "description": "TypeScript pool deployment"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Deploy EulerSwap Pool",
     "type": "good",
@@ -828,7 +828,7 @@
     "description": "computing pool address before deployment"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Deploy EulerSwap Pool",
     "type": "good",
@@ -837,7 +837,7 @@
     "description": "setting up LP position"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Execute Swaps on EulerSwap",
     "type": "bad",
@@ -846,7 +846,7 @@
     "description": "swap without checking limits"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Execute Swaps on EulerSwap",
     "type": "good",
@@ -855,7 +855,7 @@
     "description": "basic swap execution"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Execute Swaps on EulerSwap",
     "type": "good",
@@ -864,7 +864,7 @@
     "description": "using EulerSwapPeriphery for safety"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Execute Swaps on EulerSwap",
     "type": "good",
@@ -873,7 +873,7 @@
     "description": "TypeScript swap execution"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Execute Swaps on EulerSwap",
     "type": "good",
@@ -882,7 +882,7 @@
     "description": "flash swap with callback"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Execute Swaps on EulerSwap",
     "type": "good",
@@ -891,7 +891,7 @@
     "description": "multi-hop swap via aggregator"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Check EulerSwap Liquidity Limits",
     "type": "bad",
@@ -900,7 +900,7 @@
     "description": "assuming unlimited liquidity"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Check EulerSwap Liquidity Limits",
     "type": "good",
@@ -909,7 +909,7 @@
     "description": "check limits before swapping"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Check EulerSwap Liquidity Limits",
     "type": "good",
@@ -918,7 +918,7 @@
     "description": "understanding limit factors"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Check EulerSwap Liquidity Limits",
     "type": "good",
@@ -927,7 +927,7 @@
     "description": "splitting large swaps"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Check EulerSwap Liquidity Limits",
     "type": "good",
@@ -936,7 +936,7 @@
     "description": "monitoring pool health"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Get Swap Quotes from EulerSwap",
     "type": "bad",
@@ -945,7 +945,7 @@
     "description": "using old quote for execution"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Get Swap Quotes from EulerSwap",
     "type": "good",
@@ -954,7 +954,7 @@
     "description": "query and execute atomically"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Get Swap Quotes from EulerSwap",
     "type": "good",
@@ -963,7 +963,7 @@
     "description": "exact output quote"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Get Swap Quotes from EulerSwap",
     "type": "good",
@@ -972,7 +972,7 @@
     "description": "using EulerSwapPeriphery"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Get Swap Quotes from EulerSwap",
     "type": "good",
@@ -981,7 +981,7 @@
     "description": "checking quote validity"
   },
   {
-    "skill": "euler-swap",
+    "skill": "how-to-use-euler-swap",
     "ruleId": "",
     "ruleTitle": "Get Swap Quotes from EulerSwap",
     "type": "good",
@@ -990,7 +990,7 @@
     "description": "comparing across pools"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Create an EulerEarn Vault",
     "type": "bad",
@@ -999,7 +999,7 @@
     "description": "deploying without proper initialization"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Create an EulerEarn Vault",
     "type": "good",
@@ -1008,7 +1008,7 @@
     "description": "deploy via EulerEarnFactory"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Create an EulerEarn Vault",
     "type": "good",
@@ -1017,7 +1017,7 @@
     "description": "configure vault after deployment"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Create an EulerEarn Vault",
     "type": "good",
@@ -1026,7 +1026,7 @@
     "description": "add strategy vaults"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Create an EulerEarn Vault",
     "type": "good",
@@ -1035,7 +1035,7 @@
     "description": "TypeScript vault creation"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "bad",
@@ -1044,7 +1044,7 @@
     "description": "wrong function signature and no liquidity check"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "good",
@@ -1053,7 +1053,7 @@
     "description": "check liquidity before reallocating"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "good",
@@ -1062,7 +1062,7 @@
     "description": "updating supply queue priority"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "good",
@@ -1071,7 +1071,7 @@
     "description": "updating withdraw queue for liquidity"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "good",
@@ -1080,7 +1080,7 @@
     "description": "reducing strategy cap safely"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "good",
@@ -1089,7 +1089,7 @@
     "description": "emergency strategy removal"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "good",
@@ -1098,7 +1098,7 @@
     "description": "monitoring and rebalancing"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "good",
@@ -1107,7 +1107,7 @@
     "description": "admin configuring PublicAllocator"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "good",
@@ -1116,7 +1116,7 @@
     "description": "public reallocation by anyone"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "good",
@@ -1125,7 +1125,7 @@
     "description": "TypeScript public reallocation"
   },
   {
-    "skill": "euler-earn",
+    "skill": "interact-with-euler-earn",
     "ruleId": "",
     "ruleTitle": "Manage EulerEarn Strategies",
     "type": "good",
@@ -1134,7 +1134,7 @@
     "description": "claiming accrued fees as admin"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Fee Flow Controller Mechanics",
     "type": "bad",
@@ -1143,7 +1143,7 @@
     "description": "expecting direct fee claiming"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Fee Flow Controller Mechanics",
     "type": "good",
@@ -1152,7 +1152,7 @@
     "description": "understanding fee flow architecture"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Fee Flow Controller Mechanics",
     "type": "good",
@@ -1161,7 +1161,7 @@
     "description": "interacting with FeeFlowController"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Fee Flow Controller Mechanics",
     "type": "good",
@@ -1170,7 +1170,7 @@
     "description": "buying from the auction"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Flash Loans and Debt Transfer",
     "type": "bad",
@@ -1179,7 +1179,7 @@
     "description": "not repaying flash loan in same transaction"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Flash Loans and Debt Transfer",
     "type": "good",
@@ -1188,7 +1188,7 @@
     "description": "flash loan with proper repayment"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Vault Hooks and Use Cases",
     "type": "bad",
@@ -1197,7 +1197,7 @@
     "description": "ignoring hook configuration on new vaults"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Vault Hooks and Use Cases",
     "type": "good",
@@ -1206,7 +1206,7 @@
     "description": "understanding hook architecture"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Vault Hooks and Use Cases",
     "type": "good",
@@ -1215,7 +1215,7 @@
     "description": "implementing Pause Guardian"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Vault Hooks and Use Cases",
     "type": "good",
@@ -1224,7 +1224,7 @@
     "description": "implementing Access Control"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Vault Hooks and Use Cases",
     "type": "good",
@@ -1233,7 +1233,7 @@
     "description": "custom hook implementation"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "Vault Hooks and Use Cases",
     "type": "good",
@@ -1242,7 +1242,7 @@
     "description": "checking vault status with hooks"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "EUL Reward Token Distribution",
     "type": "bad",
@@ -1251,7 +1251,7 @@
     "description": "expecting immediate full access to rewards"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "EUL Reward Token Distribution",
     "type": "good",
@@ -1260,7 +1260,7 @@
     "description": "understanding locked reward mechanics"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "EUL Reward Token Distribution",
     "type": "good",
@@ -1269,7 +1269,7 @@
     "description": "checking unlock amounts"
   },
   {
-    "skill": "euler-advanced",
+    "skill": "use-euler-feeflow-hooks-rewardEUL-flashloan",
     "ruleId": "",
     "ruleTitle": "EUL Reward Token Distribution",
     "type": "good",
@@ -1278,7 +1278,7 @@
     "description": "withdrawing vested tokens"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Creator Tools and Deployment Resources",
     "type": "good",
@@ -1287,7 +1287,7 @@
     "description": "deploying vault via script"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Creator Tools and Deployment Resources",
     "type": "good",
@@ -1296,7 +1296,7 @@
     "description": "using EdgeFactory for ungoverned vaults"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Contract Addresses and ABIs",
     "type": "bad",
@@ -1305,7 +1305,7 @@
     "description": "hardcoding addresses"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Contract Addresses and ABIs",
     "type": "good",
@@ -1314,7 +1314,7 @@
     "description": "using euler-interfaces package"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Contract Addresses and ABIs",
     "type": "good",
@@ -1323,7 +1323,7 @@
     "description": "dynamic chain-based loading"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Contract Addresses and ABIs",
     "type": "good",
@@ -1332,7 +1332,7 @@
     "description": "using with viem"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Contract Addresses and ABIs",
     "type": "good",
@@ -1341,7 +1341,7 @@
     "description": "Solidity remapping"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Lens Contracts for Data Queries",
     "type": "bad",
@@ -1350,7 +1350,7 @@
     "description": "making many individual calls"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Lens Contracts for Data Queries",
     "type": "good",
@@ -1359,7 +1359,7 @@
     "description": "using VaultLens for comprehensive vault data"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Lens Contracts for Data Queries",
     "type": "good",
@@ -1368,7 +1368,7 @@
     "description": "using AccountLens for position data"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Lens Contracts for Data Queries",
     "type": "good",
@@ -1377,7 +1377,7 @@
     "description": "using AccountLens for liquidity info only"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Lens Contracts for Data Queries",
     "type": "good",
@@ -1386,7 +1386,7 @@
     "description": "using VaultLens for IRM curve data"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Lens Contracts for Data Queries",
     "type": "good",
@@ -1395,7 +1395,7 @@
     "description": "using OracleLens for oracle validation"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Lens Contracts for Data Queries",
     "type": "good",
@@ -1404,7 +1404,7 @@
     "description": "using UtilsLens for calculations"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Lens Contracts for Data Queries",
     "type": "good",
@@ -1413,7 +1413,7 @@
     "description": "using EulerEarnVaultLens for yield strategies"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "bad",
@@ -1422,7 +1422,7 @@
     "description": "querying everything on-chain"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
@@ -1431,7 +1431,7 @@
     "description": "using Subgraph for aggregated data"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
@@ -1440,7 +1440,7 @@
     "description": "querying vault data"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
@@ -1449,7 +1449,7 @@
     "description": "querying vault status/state"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
@@ -1458,7 +1458,7 @@
     "description": "querying account balances via TrackingVaultBalance"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
@@ -1467,7 +1467,7 @@
     "description": "querying interest rate history"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
@@ -1476,7 +1476,7 @@
     "description": "querying liquidation events"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",
@@ -1485,7 +1485,7 @@
     "description": "querying deposits and withdrawals"
   },
   {
-    "skill": "euler-lens-data",
+    "skill": "how-to-fetch-euler-data-lens",
     "ruleId": "",
     "ruleTitle": "Data Querying with Subgraphs",
     "type": "good",

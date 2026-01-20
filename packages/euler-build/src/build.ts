@@ -40,41 +40,41 @@ function generateMarkdown(
   skillName: SkillName
 ): string {
   const titleMap: Record<SkillName, string> = {
-    'euler-finance': 'Euler Finance Agent Skill',
-    'euler-irm-oracles': 'Euler IRM & Oracles Agent Skill',
-    'euler-swap': 'EulerSwap Agent Skill',
-    'euler-earn': 'EulerEarn Agent Skill',
-    'euler-advanced': 'Euler Advanced Features Agent Skill',
-    'euler-lens-data': 'Euler Lens & Data Agent Skill',
+    'how-to-use-euler-vaults': 'Euler Finance Agent Skill',
+    'euler-interest-rate-models-and-oracles': 'Euler IRM & Oracles Agent Skill',
+    'how-to-use-euler-swap': 'EulerSwap Agent Skill',
+    'interact-with-euler-earn': 'EulerEarn Agent Skill',
+    'use-euler-feeflow-hooks-rewardEUL-flashloan': 'Euler Advanced Features Agent Skill',
+    'how-to-fetch-euler-data-lens': 'Euler Lens & Data Agent Skill',
   }
 
   const noteMap: Record<SkillName, string> = {
-    'euler-finance': `> **Note:**  
+    'how-to-use-euler-vaults': `> **Note:**  
 > This document is for agents and LLMs to follow when interacting with,  
 > building on, or integrating Euler Finance protocol. It covers vault operations,  
 > EVC batching, risk management, architecture, and security.
 >
 > For specialized topics, see companion skills:
-> - \`euler-irm-oracles\` - Oracle adapters, price resolution, Interest Rate Models
-> - \`euler-swap\` - EulerSwap AMM integration
-> - \`euler-earn\` - EulerEarn yield aggregation
-> - \`euler-advanced\` - Hooks, flash loans, fee flow, rewards
-> - \`euler-lens-data\` - Lens contracts, subgraphs, developer tools`,
-    'euler-irm-oracles': `> **Note:**  
+> - \`euler-interest-rate-models-and-oracles\` - Oracle adapters, price resolution, Interest Rate Models
+> - \`how-to-use-euler-swap\` - EulerSwap AMM integration
+> - \`interact-with-euler-earn\` - EulerEarn yield aggregation
+> - \`use-euler-feeflow-hooks-rewardEUL-flashloan\` - Hooks, flash loans, fee flow, rewards
+> - \`how-to-fetch-euler-data-lens\` - Lens contracts, subgraphs, developer tools`,
+    'euler-interest-rate-models-and-oracles': `> **Note:**  
 > This document is for agents and LLMs to follow when working with  
 > Euler Finance price oracles and Interest Rate Models. It covers deploying  
 > adapters, configuring EulerRouter, querying prices, and understanding IRM types.`,
-    'euler-swap': `> **Note:**  
+    'how-to-use-euler-swap': `> **Note:**  
 > This document is for agents and LLMs to follow when interacting with  
 > EulerSwap AMM. It covers pool deployment, quotes, liquidity limits, and swap execution.`,
-    'euler-earn': `> **Note:**  
+    'interact-with-euler-earn': `> **Note:**  
 > This document is for agents and LLMs to follow when interacting with  
 > EulerEarn yield aggregation. It covers vault creation, strategy management,  
 > roles, and PublicAllocator.`,
-    'euler-advanced': `> **Note:**  
+    'use-euler-feeflow-hooks-rewardEUL-flashloan': `> **Note:**  
 > This document is for agents and LLMs to follow when implementing  
 > advanced Euler features. It covers hooks, flash loans, fee flow, and rewards.`,
-    'euler-lens-data': `> **Note:**  
+    'how-to-fetch-euler-data-lens': `> **Note:**  
 > This document is for agents and LLMs to follow when querying Euler data  
 > or using developer tools. It covers Lens contracts, subgraphs, contract  
 > interfaces, and no-code vault deployment.`,
@@ -269,8 +269,8 @@ async function buildSkill(skillName: SkillName): Promise<{ sections: number; rul
     }
   }
 
-  // Upgrade version if flag is passed (only for euler-finance)
-  if (upgradeVersion && skillName === 'euler-finance') {
+  // Upgrade version if flag is passed (only for how-to-use-euler-vaults)
+  if (upgradeVersion && skillName === 'how-to-use-euler-vaults') {
     const oldVersion = metadata.version
     metadata.version = incrementVersion(oldVersion)
     console.log(`  Upgrading version: ${oldVersion} -> ${metadata.version}`)

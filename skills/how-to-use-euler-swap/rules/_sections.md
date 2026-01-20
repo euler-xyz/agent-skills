@@ -1,6 +1,6 @@
 # Sections
 
-This file defines the section for the euler-swap skill.
+This file defines the section for the how-to-use-euler-swap skill.
 
 ---
 
