@@ -13,12 +13,12 @@ export const SKILLS_BASE_DIR = join(__dirname, '..', '..', '..', 'skills')
 
 // All skill directories to process
 export const SKILL_NAMES = [
-  'how-to-use-euler-vaults',
-  'euler-interest-rate-models-and-oracles',
-  'how-to-use-euler-swap',
-  'interact-with-euler-earn',
-  'use-euler-feeflow-hooks-rewardEUL-flashloan',
-  'how-to-fetch-euler-data-lens',
+  'euler-vaults',
+  'euler-irm-oracles',
+  'euler-swap',
+  'euler-earn',
+  'euler-advanced',
+  'euler-data',
 ] as const
 
 export type SkillName = (typeof SKILL_NAMES)[number]
@@ -34,8 +34,8 @@ export function getSkillPaths(skillName: SkillName) {
   }
 }
 
-// Legacy exports for backward compatibility (defaults to how-to-use-euler-vaults)
-export const SKILL_DIR = join(SKILLS_BASE_DIR, 'how-to-use-euler-vaults')
+// Legacy exports for backward compatibility (defaults to euler-vaults)
+export const SKILL_DIR = join(SKILLS_BASE_DIR, 'euler-vaults')
 export const RULES_DIR = join(SKILL_DIR, 'rules')
 export const METADATA_FILE = join(SKILL_DIR, 'metadata.json')
 export const OUTPUT_FILE = join(SKILL_DIR, 'AGENTS.md')

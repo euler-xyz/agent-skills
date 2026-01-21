@@ -1,5 +1,5 @@
 ---
-name: how-to-use-euler-swap
+name: euler-swap
 description: EulerSwap AMM integration guide for Euler Finance. This skill should be used when deploying swap pools, getting quotes, checking liquidity limits, or executing token swaps on EulerSwap. Triggers on tasks involving EulerSwap pools, swap execution, liquidity limits, or AMM operations on Euler.
 license: MIT
 metadata:
@@ -49,11 +49,11 @@ Reference these guidelines when:
 
 ## Companion Skills
 
-- `how-to-use-euler-vaults` - Core vault operations, EVC, risk management
-- `euler-interest-rate-models-and-oracles` - Oracle adapters and interest rate models
-- `interact-with-euler-earn` - Yield aggregation vaults
-- `use-euler-feeflow-hooks-rewardEUL-flashloan` - Hooks, flash loans, fee flow
-- `how-to-fetch-euler-data-lens` - Lens contracts and data querying
+- `euler-vaults` - Core vault operations, EVC, risk management
+- `euler-irm-oracles` - Oracle adapters and interest rate models
+- `euler-earn` - Yield aggregation vaults
+- `euler-advanced` - Hooks, flash loans, fee flow
+- `euler-data` - Lens contracts and data querying
 
 ## How to Use
 

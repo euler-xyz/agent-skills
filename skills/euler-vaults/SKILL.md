@@ -1,5 +1,5 @@
 ---
-name: how-to-use-euler-vaults
+name: euler-vaults
 description: Core guide for interacting with Euler Finance V2 protocol. This skill should be used when building DeFi integrations, managing lending positions, or understanding Euler architecture. Triggers on tasks involving lending, borrowing, collateral, liquidation, EVC, EVK, or core Euler operations. For specialized topics, see companion skills.
 license: MIT
 metadata:
@@ -14,11 +14,11 @@ Core guide for interacting with Euler Finance V2 protocol. Contains rules across
 ## Companion Skills
 
 For specialized topics, use these companion skills:
-- **euler-interest-rate-models-and-oracles** - Oracle adapters, EulerRouter, price resolution, Interest Rate Models
-- **how-to-use-euler-swap** - EulerSwap AMM pools, quotes, liquidity
-- **interact-with-euler-earn** - EulerEarn yield aggregation, strategies
-- **use-euler-feeflow-hooks-rewardEUL-flashloan** - Hooks, flash loans, fee flow, rewards
-- **how-to-fetch-euler-data-lens** - Lens contracts, subgraphs, contract interfaces, developer tools
+- **euler-irm-oracles** - Oracle adapters, EulerRouter, price resolution, Interest Rate Models
+- **euler-swap** - EulerSwap AMM pools, quotes, liquidity
+- **euler-earn** - EulerEarn yield aggregation, strategies
+- **euler-advanced** - Hooks, flash loans, fee flow, rewards
+- **euler-data** - Lens contracts, subgraphs, contract interfaces, developer tools
 
 ## When to Apply
 
