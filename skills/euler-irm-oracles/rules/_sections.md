@@ -1,6 +1,6 @@
 # Sections
 
-This file defines sections for the euler-interest-rate-models-and-oracles skill.
+This file defines sections for the euler-irm-oracles skill.
 
 ---
 

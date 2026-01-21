@@ -23,7 +23,8 @@ Oracle and Interest Rate Model guide for Euler Finance V2 protocol. Covers deplo
    - 1.1 [Configure EulerRouter for Price Resolution](#11-configure-eulerrouter-for-price-resolution)
    - 1.2 [Deploy an Oracle Adapter](#12-deploy-an-oracle-adapter)
    - 1.3 [Get Asset Prices from Oracles](#13-get-asset-prices-from-oracles)
-   - 1.4 [Interest Rate Model Types and Configuration](#14-interest-rate-model-types-and-configuration)
+2. [Interest Rate Models](#2-interest-rate-models) — **HIGH**
+   - 2.1 [Interest Rate Model Types and Configuration](#21-interest-rate-model-types-and-configuration)
 
 ---
 
@@ -682,7 +683,15 @@ See also: [Lens Contracts](tools-lens) - OracleLens for oracle validation and ch
 
 Reference: [https://github.com/euler-xyz/euler-price-oracle#iprice oracle](https://github.com/euler-xyz/euler-price-oracle#iprice oracle)
 
-### 1.4 Interest Rate Model Types and Configuration
+---
+
+## 2. Interest Rate Models
+
+**Impact: HIGH**
+
+Available Interest Rate Models and their configuration. Euler supports multiple IRM types (Linear Kink, Adaptive Curve, Fixed Cyclical Binary, Base Premium) each suited for different use cases and risk profiles.
+
+### 2.1 Interest Rate Model Types and Configuration
 
 **Impact: HIGH (Critical for selecting and configuring appropriate interest rates)**
 
