@@ -34,7 +34,7 @@ The section ID (in parentheses) is the filename prefix used to group rules.
 
 **Impact:** HIGH
 
-**Description:** Core market design and vault architecture concepts. Understanding Euler's modular design - including vault types (Core, Edge, Escrow), market structure, and how components interact - is essential for building on Euler.
+**Description:** Core market design and vault architecture concepts. Understanding Euler's modular design enables various market structures: simple collateral-debt pairs (Morpho-style), rehypothecation pairs (Silo-style), multiple collaterals (Compound-style), cross-collateralised clusters (Aave-style), or fully customisable configurations. Escrow vaults provide collateral-only functionality without borrowing. Choose based on capital efficiency vs risk isolation tradeoffs.
 
 ## 5. Security (sec)
 

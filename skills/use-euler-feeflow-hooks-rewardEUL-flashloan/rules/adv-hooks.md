@@ -52,35 +52,6 @@ uint32 OP_VAULT_STATUS_CHECK = 1 << 14;  // checkVaultStatus
 vault.setHookConfig(address(0), 0);
 ```
 
-**Correct (implementing Pause Guardian):**
-
-```solidity
-import {HookTargetGuardian} from "evk-periphery/HookTarget/HookTargetGuardian.sol";
-
-// Deploy pause guardian
-HookTargetGuardian guardian = new HookTargetGuardian(
-    admin,           // DEFAULT_ADMIN_ROLE holder
-    1 hours,         // PAUSE_DURATION: how long pause lasts
-    24 hours         // PAUSE_COOLDOWN: time before can pause again
-);
-
-// Grant guardian role to trusted address
-guardian.grantRole(guardian.GUARDIAN_ROLE(), guardianAddress);
-
-// Configure vault to use guardian for specific operations
-uint32 pausableOps = OP_DEPOSIT | OP_BORROW | OP_LIQUIDATE;
-vault.setHookConfig(address(guardian), pausableOps);
-
-// Guardian can now pause/unpause
-guardian.pause();    // All hooked operations will revert
-guardian.unpause();  // Operations resume
-
-// Check pause status
-bool isPaused = guardian.isPaused();
-uint256 remaining = guardian.remainingPauseDuration();
-bool canPause = guardian.canBePaused();
-```
-
 **Correct (implementing Access Control):**
 
 ```solidity
@@ -199,10 +170,9 @@ const isDepositDisabled = operations.DEPOSIT && hookTarget === '0x00000000000000
 
 | Hook Type | Purpose | Example |
 |-----------|---------|---------|
-| Pause Guardian | Emergency pause | Halt operations during incident |
 | Access Control | Permissioned vaults | KYC/AML compliance |
 | Rate Limiter | Prevent large movements | Limit deposit/withdraw per block |
 | Invariant Checker | Post-condition validation | Ensure utilization bounds |
 | Whitelist | Restrict interactions | Institutional-only vaults |
 
-Reference: [HookTargetGuardian.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/HookTarget/HookTargetGuardian.sol), [EVK Whitepaper - Hooks](https://github.com/euler-xyz/euler-vault-kit/blob/master/docs/whitepaper.md)
+[EVK Whitepaper - Hooks](https://github.com/euler-xyz/euler-vault-kit/blob/master/docs/whitepaper.md)

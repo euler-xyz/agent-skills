@@ -67,10 +67,14 @@ eulerRouter.govSetConfig(
 import {CrossAdapter} from "euler-price-oracle/adapter/CrossAdapter.sol";
 
 // Deploy cross adapter that chains TOKEN/ETH -> ETH/USD
-address crossAdapter = new CrossAdapter(
-    tokenEthOracle,   // First oracle: TOKEN/ETH
-    ethUsdOracle,     // Second oracle: ETH/USD
-    weth              // Cross asset (intermediate)
+// Constructor: (base, cross, quote, oracleBaseCross, oracleCrossQuote)
+// Note: Both cross oracles MUST be bidirectional. Does not support bid/ask pricing.
+CrossAdapter crossAdapter = new CrossAdapter(
+    tokenAddress,     // base: the asset you want to price
+    weth,             // cross: intermediate asset (e.g., WETH)
+    usd,              // quote: the unit of account
+    tokenEthOracle,   // oracleBaseCross: TOKEN/ETH oracle (must be bidirectional)
+    ethUsdOracle      // oracleCrossQuote: ETH/USD oracle (must be bidirectional)
 );
 
 // Configure router with the cross adapter
@@ -107,6 +111,51 @@ uint256 shareValueUsd = eulerRouter.getQuote(1e18, vaultAddress, usd);
 // IMPORTANT: Verify vault's convertToAssets is secure before configuring!
 // Per ERC4626 spec, convert* ignores liquidity, fees, slippage
 // The reported price may not be realizable through redeem/withdraw
+```
+
+**Example: Pricing sUSDS (ERC4626 vault for USDS) as collateral**
+
+For yield-bearing tokens like sUSDS used as collateral in an Euler vault, you need to configure the full pricing chain:
+
+```solidity
+// sUSDS is an ERC4626 vault wrapping USDS
+// To use sUSDS as collateral and price the Euler vault shares, the router needs:
+// 1. USDS/USD pricing (the base asset)
+// 2. sUSDS registered as a resolved vault (for pricing sUSDS)
+// 3. The Euler vault registered as a resolved vault (for pricing vault shares)
+
+// Step 1: Configure USDS/USD pricing
+eulerRouter.govSetConfig(
+    usds,                  // base: USDS token
+    usd,                   // quote: USD reference
+    usdsUsdOracle          // oracle: e.g., Chainlink USDS/USD feed
+);
+
+// Step 2: Register sUSDS as a resolved vault
+// This allows pricing sUSDS collateral via convertToAssets → USDS → USD
+eulerRouter.govSetResolvedVault(
+    susds,                 // sUSDS vault address
+    true                   // enable resolution
+);
+
+// Step 3: Register the Euler vault as a resolved vault
+// This allows pricing the Euler vault's shares (e.g., for use as collateral elsewhere)
+eulerRouter.govSetResolvedVault(
+    eulerVaultSUSDS,       // Euler vault that accepts sUSDS deposits
+    true                   // enable resolution
+);
+
+// Now the router can price at each level:
+
+// Price sUSDS directly:
+// Query: getQuote(1e18, sUSDS, USD)
+// Path: sUSDS → convertToAssets → USDS → USDS/USD oracle → USD
+uint256 susdsValueInUsd = eulerRouter.getQuote(1e18, susds, usd);
+
+// Price Euler vault shares:
+// Query: getQuote(1e18, eulerVaultSUSDS, USD)
+// Path: eVault → convertToAssets → sUSDS → convertToAssets → USDS → USD
+uint256 eVaultShareValueInUsd = eulerRouter.getQuote(1e18, eulerVaultSUSDS, usd);
 ```
 
 **Correct (TypeScript router configuration):**

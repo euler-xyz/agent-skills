@@ -13,7 +13,7 @@ January 2026
 
 ## Abstract
 
-Oracle and Interest Rate Model guide for Euler Finance V2 protocol. Covers deploying oracle adapters (Chainlink, Pyth, Uniswap TWAP, Chronicle, RedStone), configuring EulerRouter for price resolution, querying asset prices, and understanding IRM types (Linear Kink, Adaptive Curve, Fixed Cyclical Binary, Base Premium).
+Oracle and Interest Rate Model guide for Euler Finance V2 protocol. Covers deploying oracle adapters (Chainlink, Pyth, Chronicle, RedStone), configuring EulerRouter for price resolution, querying asset prices, and understanding IRM types (Linear Kink, Adaptive Curve, Fixed Cyclical Binary, Base Premium).
 
 ---
 
@@ -32,7 +32,7 @@ Oracle and Interest Rate Model guide for Euler Finance V2 protocol. Covers deplo
 
 **Impact: HIGH**
 
-Oracle integration guide for Euler Finance V2 protocol. Covers deploying oracle adapters (Chainlink, Pyth, Uniswap TWAP, Chronicle, RedStone, Cross, Fixed Rate), configuring EulerRouter for price resolution, and querying asset prices. Essential for vault creation and price feed management.
+Oracle integration guide for Euler Finance V2 protocol. Covers deploying oracle adapters (Chainlink, Pyth, Chronicle, RedStone, Cross, Fixed Rate), configuring EulerRouter for price resolution, and querying asset prices. Essential for vault creation and price feed management.
 
 ### 1.1 Configure EulerRouter for Price Resolution
 
@@ -98,10 +98,14 @@ eulerRouter.govSetConfig(
 import {CrossAdapter} from "euler-price-oracle/adapter/CrossAdapter.sol";
 
 // Deploy cross adapter that chains TOKEN/ETH -> ETH/USD
-address crossAdapter = new CrossAdapter(
-    tokenEthOracle,   // First oracle: TOKEN/ETH
-    ethUsdOracle,     // Second oracle: ETH/USD
-    weth              // Cross asset (intermediate)
+// Constructor: (base, cross, quote, oracleBaseCross, oracleCrossQuote)
+// Note: Both cross oracles MUST be bidirectional. Does not support bid/ask pricing.
+CrossAdapter crossAdapter = new CrossAdapter(
+    tokenAddress,     // base: the asset you want to price
+    weth,             // cross: intermediate asset (e.g., WETH)
+    usd,              // quote: the unit of account
+    tokenEthOracle,   // oracleBaseCross: TOKEN/ETH oracle (must be bidirectional)
+    ethUsdOracle      // oracleCrossQuote: ETH/USD oracle (must be bidirectional)
 );
 
 // Configure router with the cross adapter
@@ -111,34 +115,49 @@ eulerRouter.govSetConfig(tokenAddress, usd, crossAdapter);
 **Correct: ERC-4626 vault share pricing**
 
 ```solidity
-// For pricing vault shares in terms of underlying
-// Router uses convertToAssets() for automatic share->asset conversion
+// sUSDS is an ERC4626 vault wrapping USDS
+// To use sUSDS as collateral and price the Euler vault shares, the router needs:
+// 1. USDS/USD pricing (the base asset)
+// 2. sUSDS registered as a resolved vault (for pricing sUSDS)
+// 3. The Euler vault registered as a resolved vault (for pricing vault shares)
 
-// Configure underlying asset pricing first
+// Step 1: Configure USDS/USD pricing
 eulerRouter.govSetConfig(
-    underlyingAsset,
-    usd,
-    underlyingOracle
+    usds,                  // base: USDS token
+    usd,                   // quote: USD reference
+    usdsUsdOracle          // oracle: e.g., Chainlink USDS/USD feed
 );
 
-// Enable vault share resolution
-// Router will call vault.convertToAssets() and recurse
+// Step 2: Register sUSDS as a resolved vault
+// This allows pricing sUSDS collateral via convertToAssets → USDS → USD
 eulerRouter.govSetResolvedVault(
-    vaultAddress,
-    true  // Enable automatic share->asset conversion
+    susds,                 // sUSDS vault address
+    true                   // enable resolution
 );
 
-// To disable later:
-eulerRouter.govSetResolvedVault(vaultAddress, false);
+// Step 3: Register the Euler vault as a resolved vault
+// This allows pricing the Euler vault's shares (e.g., for use as collateral elsewhere)
+eulerRouter.govSetResolvedVault(
+    eulerVaultSUSDS,       // Euler vault that accepts sUSDS deposits
+    true                   // enable resolution
+);
 
-// Now queries for vault shares work:
-// vaultShares -> convertToAssets -> underlying -> USD
-uint256 shareValueUsd = eulerRouter.getQuote(1e18, vaultAddress, usd);
+// Now the router can price at each level:
 
-// IMPORTANT: Verify vault's convertToAssets is secure before configuring!
-// Per ERC4626 spec, convert* ignores liquidity, fees, slippage
-// The reported price may not be realizable through redeem/withdraw
+// Price sUSDS directly:
+// Query: getQuote(1e18, sUSDS, USD)
+// Path: sUSDS → convertToAssets → USDS → USDS/USD oracle → USD
+uint256 susdsValueInUsd = eulerRouter.getQuote(1e18, susds, usd);
+
+// Price Euler vault shares:
+// Query: getQuote(1e18, eulerVaultSUSDS, USD)
+// Path: eVault → convertToAssets → sUSDS → convertToAssets → USDS → USD
+uint256 eVaultShareValueInUsd = eulerRouter.getQuote(1e18, eulerVaultSUSDS, usd);
 ```
+
+**Example: Pricing sUSDS (ERC4626 vault for USDS) as collateral**
+
+For yield-bearing tokens like sUSDS used as collateral in an Euler vault, you need to configure the full pricing chain:
 
 **Correct: TypeScript router configuration**
 
@@ -314,7 +333,7 @@ const batchItems = [
     value: 0n,
     data: encodeFunctionData({
       abi: evaultABI,
-      functionName: 'deposit',
+      functionName: 'borrow',
       args: [amount, receiver]
     })
   }
@@ -324,27 +343,7 @@ await evc.write.batch(batchItems, { value: updateFee });
 
 **CRITICAL: Pyth Price Updates Required**
 
-Pyth oracles are pull-based and **will revert if prices are stale**. You must update prices before any Euler operation that uses the oracle (deposits, borrows, liquidations, etc.):
-
-For production, consider using MEV protection services that bundle price updates automatically.
-
-**Correct: deploy UniswapV3 TWAP oracle**
-
-```solidity
-import {UniswapV3Oracle} from "euler-price-oracle/adapter/uniswap/UniswapV3Oracle.sol";
-
-// TWAP oracle for manipulation resistance
-UniswapV3Oracle oracle = new UniswapV3Oracle(
-    tokenA,        // First token in pair
-    tokenB,        // Second token in pair
-    fee,           // Pool fee tier (500, 3000, or 10000)
-    twapWindow,    // TWAP window in seconds (e.g., 1800 for 30 min)
-    uniswapFactory // Uniswap V3 factory address
-);
-
-// TWAP provides manipulation-resistant pricing
-// Longer window = more resistant but slower to update
-```
+Pyth oracles are pull-based and **will revert if prices are stale**. You must update prices before any Euler operation that requires health checks (withdrawals, borrows, liquidations, etc.):
 
 **Correct: deploy rate provider oracle for LSTs**
 
@@ -352,13 +351,15 @@ UniswapV3Oracle oracle = new UniswapV3Oracle(
 import {LidoOracle} from "euler-price-oracle/adapter/lido/LidoOracle.sol";
 import {RateProviderOracle} from "euler-price-oracle/adapter/rate/RateProviderOracle.sol";
 
-// For wstETH/stETH (built-in Lido support)
-LidoOracle wstethOracle = new LidoOracle(wsteth, steth);
+// For wstETH/stETH - LidoOracle has no constructor (uses hardcoded addresses)
+// Only works on mainnet with canonical STETH/WSTETH addresses
+LidoOracle wstethOracle = new LidoOracle();
+// Supports: STETH -> WSTETH and WSTETH -> STETH
 
 // For other rate providers (e.g., Balancer)
 RateProviderOracle rateOracle = new RateProviderOracle(
-    baseToken,         // e.g., rETH
-    quoteToken,        // e.g., ETH
+    base,              // e.g., rETH
+    quote,             // e.g., ETH
     rateProvider       // Balancer rate provider address
 );
 ```
@@ -379,24 +380,6 @@ ChronicleOracle oracle = new ChronicleOracle(
 // Note: Chronicle feeds require whitelisting (kiss)
 // The adapter address must be whitelisted on the Chronicle feed
 // Contact Chronicle team for production whitelisting
-```
-
-**Correct: deploy RedStoneOracle adapter**
-
-```solidity
-import {RedstoneCoreOracle} from "euler-price-oracle/adapter/redstone/RedstoneCoreOracle.sol";
-
-// RedStone provides modular, gas-optimized oracle feeds
-RedstoneCoreOracle oracle = new RedstoneCoreOracle(
-    base,                    // Base token address
-    quote,                   // Quote token address
-    feedId,                  // RedStone feed ID (bytes32)
-    feedDecimals,            // Feed decimal precision
-    maxStaleness             // Max age in seconds
-);
-
-// RedStone requires signed price payloads in calldata
-// Use RedStone SDK to wrap transactions with price data
 ```
 
 **Correct: deploy FixedRateOracle for stablecoins**
@@ -423,86 +406,41 @@ FixedRateOracle oracle = new FixedRateOracle(
 import {CrossAdapter} from "euler-price-oracle/adapter/CrossAdapter.sol";
 
 // CrossAdapter chains two oracles through an intermediate asset
-// Example: TOKEN -> ETH -> USD (requires TOKEN/ETH and ETH/USD oracles)
+// Constructor: (base, cross, quote, oracleBaseCross, oracleCrossQuote)
+// Note: Both cross oracles MUST be bidirectional. Does not support bid/ask pricing.
 
-CrossAdapter oracle = new CrossAdapter(
-    oracleBaseCross,    // First oracle: TOKEN/ETH
-    oracleCrossQuote,   // Second oracle: ETH/USD
-    crossAsset          // Intermediate asset: ETH (WETH address)
-);
-
-// Price flow: TOKEN -> ETH (via oracleBaseCross) -> USD (via oracleCrossQuote)
-// Useful for tokens that only have ETH pairs but vault needs USD pricing
-
-// Example: Deploy cross adapter for LINK/USD via LINK/ETH and ETH/USD
+// Example: LINK/USD via LINK/ETH and ETH/USD
 CrossAdapter linkUsdOracle = new CrossAdapter(
-    linkEthChainlinkOracle,   // LINK/ETH feed
-    ethUsdChainlinkOracle,    // ETH/USD feed  
-    weth                       // Cross through WETH
+    link,                      // base: the asset to price
+    weth,                      // cross: intermediate asset
+    usd,                       // quote: unit of account
+    linkEthChainlinkOracle,    // oracleBaseCross: LINK/ETH (must be bidirectional)
+    ethUsdChainlinkOracle      // oracleCrossQuote: ETH/USD (must be bidirectional)
 );
+
+// Price flow: LINK -> ETH (via oracleBaseCross) -> USD (via oracleCrossQuote)
+// Useful for tokens that only have ETH pairs but vault needs USD pricing
 ```
 
 **Correct: deploy PendleOracle for yield-bearing tokens**
 
-```typescript
-// TypeScript: Check if Pendle market is ready for oracle
-async function isPendleMarketReady(
-  market: Address,
-  twapWindow: number
-): Promise<boolean> {
-  const [increaseCardinalityRequired, , oldestObservationSatisfied] = 
-    await publicClient.readContract({
-      address: market,
-      abi: pendleMarketABI,
-      functionName: 'getOracleState',
-      args: [market, twapWindow]
-    });
-  
-  return !increaseCardinalityRequired && oldestObservationSatisfied;
-}
+```solidity
+import {PendleOracle} from "euler-price-oracle/adapter/pendle/PendleOracle.sol";
 
-// Initialize market if needed
-async function initializePendleMarket(market: Address, cardinality: number) {
-  await walletClient.writeContract({
-    address: market,
-    abi: pendleMarketABI,
-    functionName: 'increaseObservationsCardinalityNext',
-    args: [cardinality]
-  });
-  
-  console.log(`Market initialized. Wait ${twapWindow} seconds before using oracle.`);
-}
+// For Pendle PT (principal tokens) as collateral
+// Constructor: (pendleOracle, pendleMarket, base, quote, twapWindow)
+PendleOracle oracle = new PendleOracle(
+    pendlePYOracle,    // Pendle PY oracle address (IPPYLpOracle)
+    pendleMarket,      // Pendle market address
+    ptToken,           // base: PT token address
+    underlyingToken,   // quote: underlying asset
+    twapWindow         // TWAP window: 900-1800 seconds recommended (uint32)
+);
+
+// IMPORTANT: Pendle market must be initialized before deployment
+// The constructor verifies observations buffer is ready
+// Uses PendlePYOracleLib for TWAP pricing
 ```
-
-**IMPORTANT: Pendle Market Initialization Required**
-
-Pendle markets must be initialized before the oracle can return prices:
-
-**Oracle Adapter Selection Guide:**
-
-| Use Case | Recommended Adapter | Configuration |
-
-|----------|-------------------|---------------|
-
-| Major pairs (ETH/USD, BTC/USD) | ChainlinkOracle | 1-4 hour staleness |
-
-| DeFi tokens with liquidity | UniswapV3Oracle | 15-30 min TWAP |
-
-| LSTs (wstETH, rETH, cbETH) | LidoOracle / RateProviderOracle | Exchange rate based |
-
-| New/exotic tokens | PythOracle | Pull-based, requires updates |
-
-| MakerDAO ecosystem | ChronicleOracle | Requires whitelisting |
-
-| Gas-optimized feeds | RedStoneOracle | Calldata-based pricing |
-
-| Stablecoins (USDC, USDT) | FixedRateOracle | 1:1 rate |
-
-| Cross-currency pricing | CrossAdapter | Chain through intermediate |
-
-| Pendle PT/LP tokens | PendleOracle | Market TWAP |
-
-| Wrapped tokens (WETH/ETH) | FixedRateOracle | 1:1 rate |
 
 **Verification after deployment:**
 
@@ -603,83 +541,13 @@ uint256 collateralValue = (collateralAmount * bidOut) / 1e18;
 uint256 debtValue = (debtAmount * askOut) / 1e18;
 ```
 
-**Correct: handling oracle failures**
-
-```typescript
-async function safeGetQuote(
-  oracle: Address,
-  inAmount: bigint,
-  base: Address,
-  quote: Address
-): Promise<{ success: boolean; value: bigint; error?: string }> {
-  try {
-    const value = await publicClient.readContract({
-      address: oracle,
-      abi: iPriceOracleABI,
-      functionName: 'getQuote',
-      args: [inAmount, base, quote],
-    });
-    
-    return { success: true, value };
-  } catch (error) {
-    // Oracle might revert for various reasons:
-    // - Stale price
-    // - No liquidity (TWAP)
-    // - Unsupported pair
-    return { 
-      success: false, 
-      value: 0n,
-      error: error.message 
-    };
-  }
-}
-
-// Usage with fallback
-const result = await safeGetQuote(primaryOracle, amount, base, quote);
-if (!result.success) {
-  console.warn('Primary oracle failed, trying fallback');
-  const fallback = await safeGetQuote(fallbackOracle, amount, base, quote);
-  if (!fallback.success) {
-    throw new Error('All oracles failed');
-  }
-  return fallback.value;
-}
-```
-
-**Correct: calculating portfolio value**
-
-```typescript
-// Pyth prices are pull-based - must update before use
-const updateData = await fetch(
-  `https://hermes.pyth.network/api/latest_vaas?ids[]=${feedId}`
-).then(r => r.json());
-
-const updateFee = await pythContract.read.getUpdateFee([updateData]);
-await pythContract.write.updatePriceFeeds(updateData, { value: updateFee });
-
-// Now price query will work
-const price = await oracle.read.getQuote([amount, base, quote]);
-```
-
-**Important: Pyth Oracle Price Updates**
-
-If using Pyth oracles, prices must be updated before querying or the call will revert:
-
 Key points:
 
 - `getQuote` converts amounts, not returns unit prices
 
-- Always handle potential oracle reverts gracefully
-
-- Consider bid/ask spreads for accurate risk assessment
-
 - Decimals are handled internally by adapters
 
-- Cross-pricing works automatically through EulerRouter
-
 - **Pyth oracles require price updates before any operation that uses them**
-
-See also: [Lens Contracts](tools-lens) - OracleLens for oracle validation and checking stale pull oracles.
 
 Reference: [https://github.com/euler-xyz/euler-price-oracle#iprice oracle](https://github.com/euler-xyz/euler-price-oracle#iprice oracle)
 
@@ -689,70 +557,58 @@ Reference: [https://github.com/euler-xyz/euler-price-oracle#iprice oracle](https
 
 **Impact: HIGH**
 
-Available Interest Rate Models and their configuration. Euler supports multiple IRM types (Linear Kink, Adaptive Curve, Fixed Cyclical Binary, Base Premium) each suited for different use cases and risk profiles.
+Available Interest Rate Models and their configuration. Euler supports multiple IRM types (Linear Kink, Kinky, Adaptive Curve, Fixed Cyclical Binary) each suited for different use cases and risk profiles.
 
 ### 2.1 Interest Rate Model Types and Configuration
 
 **Impact: HIGH (Critical for selecting and configuring appropriate interest rates)**
 
-Euler V2 supports multiple Interest Rate Model (IRM) types, each suited for different market dynamics and risk profiles.
+Euler V2 supports multiple Interest Rate Model (IRM) types, each suited for different market dynamics and risk profiles. Governors can also bring their own custom IRM as long as it conforms to the `IIRM` interface, though custom IRMs may not be supported by the Euler UI.
 
-**Incorrect: using wrong IRM for use case**
+**Incorrect: misconfigured IRM parameters**
 
 ```solidity
-// WRONG: Using linear kink for a volatile asset that needs adaptive rates
-// This can lead to under/over-utilization and poor capital efficiency
+// WRONG: Poorly configured IRM parameters
+// This can lead to suboptimal utilization and poor lender returns
 address irm = kinkIRMFactory.deploy(
     0,           // baseRate
-    4e27,        // slope1 (too high!)
-    300e27,      // slope2 (too high!)
-    3865470566   // kink: 90% (type(uint32).max * 9 / 10)
+    4e27,        // slope1: way too high - discourages borrowing
+    300e27,      // slope2: extreme spike after kink
+    3865470566   // kink: 90%
 );
-// Static rates don't adapt to market conditions!
+// Result: rates too high → low utilization → poor capital efficiency
 ```
 
 **Correct: choosing appropriate IRM type**
 
 ```solidity
-import {IRMBasePremium} from "evk-periphery/IRM/IRMBasePremium.sol";
+import {EulerFixedCyclicalBinaryIRMFactory} from "evk-periphery/IRMFactory/EulerFixedCyclicalBinaryIRMFactory.sol";
 
-// Admin can adjust rates without redeploying
-IRMBasePremium irm = new IRMBasePremium(
-    evc,
-    admin,
-    1e26,         // baseRate: 1% base
-    5e26          // premiumRate: 5% premium (total 6%)
+// Useful for synthetic assets or special vault types
+address cyclicalIRM = EulerFixedCyclicalBinaryIRMFactory(factory).deploy(
+    1e27,         // primaryRate: 100% SPY during primary phase
+    0,            // secondaryRate: 0% during secondary phase
+    7 days,       // primaryDuration: 1 week at primary rate
+    7 days,       // secondaryDuration: 1 week at secondary rate
+    block.timestamp  // startTimestamp: when first cycle begins
 );
-
-// Override premium for specific vaults
-irm.setRateOverride(specialVault, true, 2e26); // 3% total for this vault
 ```
 
 Traditional two-slope model. Rate increases linearly up to kink, then accelerates.
 
+Use the helper script to calculate parameters from human-readable APY values:
+
+See: [calculate-irm-linear-kink.js](https://github.com/euler-xyz/evk-periphery/blob/development/script/utils/calculate-irm-linear-kink.js)
+
 Self-adjusting model that targets specific utilization. Rate at target adjusts based on time spent above/below target.
+
+Use the helper script to calculate parameters from human-readable APY values:
+
+See: [calculate-irm-adaptive-curve.js](https://github.com/euler-xyz/evk-periphery/blob/development/script/utils/calculate-irm-adaptive-curve.js)
 
 Similar to kink IRM but with non-linear acceleration after kink using shape parameter.
 
 Alternates between two fixed rates on a schedule. Useful for special mechanisms.
-
-Admin-controlled fixed rate with per-vault overrides. Good for curated markets.
-
-**Selecting the Right IRM:**
-
-| Use Case | Recommended IRM | Reason |
-
-|----------|-----------------|--------|
-
-| Stable coins (USDC, DAI) | Linear Kink | Predictable behavior |
-
-| Volatile assets (ETH, BTC) | Adaptive Curve | Self-adjusts to demand |
-
-| New markets | Adaptive Curve | Finds optimal rate |
-
-| Curated/governed | Base Premium | Direct control |
-
-| Synthetic assets | Fixed Cyclical | Special mechanics |
 
 Reference: [https://github.com/euler-xyz/evk-periphery/tree/master/src/IRM](https://github.com/euler-xyz/evk-periphery/tree/master/src/IRM)
 

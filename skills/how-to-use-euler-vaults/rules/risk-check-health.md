@@ -44,11 +44,16 @@ const health = liabilityValueLiq > 0n
   ? (collateralValueLiq * BigInt(1e18)) / liabilityValueLiq 
   : BigInt(2n ** 256n - 1n); // Infinite if no debt
 
-// timeToLiquidation: estimated seconds until liquidation
-// Negative means already liquidatable, special values:
-// TTL_INFINITY = max int256 (no debt or safe forever)
-// TTL_LIQUIDATION = min int256 (already liquidatable)
-// TTL_ERROR = max int256 - 1 (calculation error)
+// timeToLiquidation: estimated SECONDS until liquidation (int256)
+// Computed via binary search over 0 to 400 days, assuming static prices/rates
+// Binary search precision: ±1 day (exits when interval <= 1 day)
+// NOTE: Only considers Euler lending/borrowing rates, NOT external yield (e.g., wstETH, DAI)
+// Special int256 values:
+const TTL_INFINITY = (2n ** 255n) - 1n;        // type(int256).max - no debt, zero rate, or collateral interest >= debt interest
+const TTL_MORE_THAN_ONE_YEAR = (2n ** 255n) - 2n; // type(int256).max - 1 - safe for at least one year
+const TTL_LIQUIDATION = -1n;                   // already liquidatable (health <= 1)
+const TTL_ERROR = -2n;                         // computation overflow or failure
+
 const ttl = liquidityInfo.timeToLiquidation;
 
 console.log(`Health: ${Number(health) / 1e18}`);
@@ -57,125 +62,27 @@ console.log(`Collateral: ${collateralValueLiq}`);
 console.log(`Time to Liquidation: ${ttl}`);
 ```
 
-**Correct (on-chain health check via vault):**
+**Correct (on-chain health check via accountLiquidity):**
 
 ```solidity
-// Check if account status is valid (will revert if unhealthy)
-// This is what vaults call during operations
-try IEVault(controller).checkAccountStatus(account, collaterals) {
-    // Account is healthy
-} catch {
-    // Account would fail health check
-}
+// Use accountLiquidity to check health on-chain
 
-// Alternative: Use the EVC to check
-(bool isHealthy, ) = IEVC(evc).call(
-    account,
-    address(controller),
-    abi.encodeCall(IEVault.checkAccountStatus, (account, collaterals))
-);
-```
-
-**Correct (calculating health factor manually):**
-
-```solidity
-/// @notice Calculate health factor for an account
-/// @param account The account to check
-/// @param controller The liability vault (controller)
-/// @return healthFactor The health ratio (1e18 = 1.0)
-function calculateHealthFactor(
-    address account,
-    address controller
-) public view returns (uint256 healthFactor) {
-    // Get debt value in unit of account
-    uint256 debtValue = getDebtValue(account, controller);
-    if (debtValue == 0) return type(uint256).max; // No debt = infinite health
-    
-    // Get risk-adjusted collateral value
-    uint256 collateralValue = 0;
-    address[] memory collaterals = IEVC(evc).getCollaterals(account);
-    
-    for (uint256 i = 0; i < collaterals.length; i++) {
-        address collateral = collaterals[i];
-        
-        // Get collateral amount
-        uint256 shares = IEVault(collateral).balanceOf(account);
-        uint256 assets = IEVault(collateral).convertToAssets(shares);
-        
-        // Get LTV for this collateral relative to controller
-        uint16 liquidationLTV = IEVault(controller).LTVLiquidation(collateral);
-        
-        // Get collateral price in unit of account
-        uint256 price = getPrice(collateral, controller);
-        
-        // Risk-adjusted value
-        collateralValue += (assets * price * liquidationLTV) / (1e18 * 1e4);
-    }
-    
-    // Health factor = collateral / debt
-    healthFactor = (collateralValue * 1e18) / debtValue;
-}
-```
-
-**Correct (setting up health monitoring):**
-
-```typescript
-// Monitor health and alert when below threshold
-const HEALTH_THRESHOLD = 1.2e18; // Alert at 1.2 health
-
-async function monitorHealth(account: Address, controller: Address) {
-  const accountInfo = await accountLens.read.getAccountInfo([account, controller]);
-  const liquidityInfo = accountInfo.vaultAccountInfo.liquidityInfo;
-  
-  const collateral = liquidityInfo.collateralValueLiquidation;
-  const liability = liquidityInfo.liabilityValueLiquidation;
-  
-  if (liability === 0n) {
-    console.log('No debt - infinite health');
-    return;
-  }
-  
-  const health = (collateral * BigInt(1e18)) / liability;
-  
-  if (health < BigInt(HEALTH_THRESHOLD)) {
-    console.warn(`⚠️ Low health: ${Number(health) / 1e18}`);
-    
-    // Calculate required collateral to reach safe health
-    const targetHealth = 1.5e18;
-    const requiredCollateral = (liability * BigInt(targetHealth)) / BigInt(1e18) - collateral;
-    
-    console.log(`Need ${requiredCollateral} more collateral value for 1.5 health`);
-  }
-}
-
-// Run monitoring loop
-setInterval(() => monitorHealth(account, controller), 60000);
-```
-
-**Correct (using vault's accountLiquidity directly):**
-
-```solidity
-// accountLiquidity returns risk-adjusted values directly from the vault
-// This is what the vault uses internally for health checks
-
-// For borrow LTV (determines if you can borrow more)
+// Get liquidity values with liquidation LTV
 (uint256 collateralValue, uint256 liabilityValue) = IEVault(controller).accountLiquidity(
     account,
-    false  // liquidation = false uses borrow LTV
+    true  // liquidation = true for liquidation LTV
 );
 
-// Health = collateralValue / liabilityValue
-// If collateralValue >= liabilityValue, account is healthy for borrowing
-bool canBorrow = collateralValue >= liabilityValue;
+// Check if account is healthy (collateral >= liability)
+bool isHealthy = collateralValue >= liabilityValue;
 
-// For liquidation LTV (determines if account can be liquidated)
-(uint256 collateralValueLiq, uint256 liabilityValueLiq) = IEVault(controller).accountLiquidity(
-    account,
-    true   // liquidation = true uses liquidation LTV
-);
+// Check if account is liquidatable
+bool isLiquidatable = liabilityValue > 0 && collateralValue < liabilityValue;
 
-// If collateralValueLiq < liabilityValueLiq, account is liquidatable
-bool isLiquidatable = collateralValueLiq < liabilityValueLiq;
+// Calculate health factor (1e18 scale)
+uint256 healthFactor = liabilityValue > 0 
+    ? (collateralValue * 1e18) / liabilityValue 
+    : type(uint256).max;
 ```
 
 **Correct (detailed breakdown with accountLiquidityFull):**
@@ -260,9 +167,7 @@ require(debt == 0, "Outstanding debt");
 // Note: This is called ON the controller vault, not the EVC
 IEVault(controller).disableController();
 
-// Now you can:
-// 1. Disable collateral: IEVC(evc).disableCollateral(account, collateralVault)
-// 2. Withdraw freely without health checks
+// Now you can withdraw freely without health checks
 ```
 
 **TypeScript: Full repay and disable flow:**
@@ -280,7 +185,7 @@ const batchItems: BatchItem[] = [
       args: [MaxUint256, account],
     }),
   },
-  // Disable controller
+  // Disable controller (releases collateral from health checks)
   {
     onBehalfOfAccount: account,
     targetContract: controllerVault,
@@ -291,18 +196,7 @@ const batchItems: BatchItem[] = [
       args: [],
     }),
   },
-  // Disable collateral (optional - via EVC)
-  {
-    onBehalfOfAccount: zeroAddress,
-    targetContract: evcAddress,
-    value: 0n,
-    data: encodeFunctionData({
-      abi: evcABI,
-      functionName: 'disableCollateral',
-      args: [account, collateralVault],
-    }),
-  },
-  // Withdraw collateral
+  // Withdraw collateral (no health check now that controller is disabled)
   {
     onBehalfOfAccount: account,
     targetContract: collateralVault,
@@ -318,24 +212,14 @@ const batchItems: BatchItem[] = [
 await evc.batch(batchItems);
 ```
 
-**Understanding checkAccountStatus and checkVaultStatus:**
+**Understanding checkAccountStatus and checkVaultStatus (EVC internals):**
 
-```solidity
-// These are EVC callback functions - NOT meant to be called directly by users
-// The EVC calls them during deferred checks at the end of batches
+These are EVC callback functions - **NOT meant to be called directly**. The EVC calls them automatically during deferred checks at the end of batches:
 
-// checkAccountStatus: Called by EVC to verify account health
-// - Reverts if account is unhealthy (collateral < liability)
-// - Returns magic value on success
-bytes4 magic = IEVault(controller).checkAccountStatus(account, collaterals);
-// magic == IEVCVault.checkAccountStatus.selector
+- `checkAccountStatus(account, collaterals)`: Called by EVC to verify account health. Reverts if unhealthy (collateral < liability). Returns magic selector on success.
+- `checkVaultStatus()`: Called by EVC to verify vault caps aren't exceeded and triggers interest rate recalculation.
 
-// checkVaultStatus: Called by EVC to verify vault caps
-// - Checks supply and borrow caps aren't exceeded
-// - Reverts with E_SupplyCapExceeded or E_BorrowCapExceeded
-// - Also triggers interest rate recalculation
-bytes4 magic = IEVault(vault).checkVaultStatus();
-```
+**For health checks in your code, use `accountLiquidity()` instead** (shown above).
 
 Key concepts:
 - Health > 1.0 = safe from liquidation
@@ -345,6 +229,15 @@ Key concepts:
 - `accountLiquidity(account, false)` = borrow LTV values
 - `accountLiquidity(account, true)` = liquidation LTV values
 - Call `disableController()` after full repayment to release position
+
+Time to Liquidation (TTL) - **unit: seconds**, **precision: ±1 day** (int256):
+- Positive values = seconds until liquidation (binary search over 0-400 days, ±1 day precision)
+- `TTL_INFINITY` = `type(int256).max`: No debt, zero borrow rate, or collateral interest >= debt interest
+- `TTL_MORE_THAN_ONE_YEAR` = `type(int256).max - 1`: Safe for at least one year
+- `TTL_LIQUIDATION` = `-1`: Already liquidatable (health <= 1)
+- `TTL_ERROR` = `-2`: Computation overflow or failure
+- ⚠️ TTL only considers **Euler lending/borrowing rates** - does NOT include external yield (wstETH, DAI etc.)
+- ⚠️ TTL assumes **static prices** - real price volatility may cause liquidation sooner
 
 See also: [Lens Contracts](tools-lens) - AccountLens provides `getAccountLiquidityInfo()` and `getTimeToLiquidation()` for comprehensive health monitoring.
 

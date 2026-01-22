@@ -2,7 +2,7 @@
 title: Deploy an Oracle Adapter
 impact: HIGH
 impactDescription: Required for vault pricing and risk management
-tags: oracle, deploy, chainlink, pyth, chronicle, redstone, uniswap, adapter
+tags: oracle, deploy, chainlink, pyth, chronicle, redstone, adapter
 ---
 
 ## Deploy an Oracle Adapter
@@ -54,7 +54,7 @@ PythOracle oracle = new PythOracle(
 
 **CRITICAL: Pyth Price Updates Required**
 
-Pyth oracles are pull-based and **will revert if prices are stale**. You must update prices before any Euler operation that uses the oracle (deposits, borrows, liquidations, etc.):
+Pyth oracles are pull-based and **will revert if prices are stale**. You must update prices before any Euler operation that requires health checks (withdrawals, borrows, liquidations, etc.):
 
 ```solidity
 import {IPyth} from "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
@@ -67,8 +67,9 @@ bytes[] memory updateData = getUpdateDataFromHermes(feedId);
 uint256 updateFee = pyth.getUpdateFee(updateData);
 pyth.updatePriceFeeds{value: updateFee}(updateData);
 
-// Step 3: Now Euler operations will work
-vault.deposit(amount, receiver); // Oracle query succeeds
+// Step 3: Now Euler operations that need oracle will work
+// Note: deposits don't require oracle, but withdrawals/borrows do
+vault.withdraw(amount, receiver, owner); // Oracle query succeeds
 ```
 
 ```typescript
@@ -107,32 +108,12 @@ const batchItems = [
     value: 0n,
     data: encodeFunctionData({
       abi: evaultABI,
-      functionName: 'deposit',
+      functionName: 'borrow',
       args: [amount, receiver]
     })
   }
 ];
 await evc.write.batch(batchItems, { value: updateFee });
-```
-
-For production, consider using MEV protection services that bundle price updates automatically.
-
-**Correct (deploy UniswapV3 TWAP oracle):**
-
-```solidity
-import {UniswapV3Oracle} from "euler-price-oracle/adapter/uniswap/UniswapV3Oracle.sol";
-
-// TWAP oracle for manipulation resistance
-UniswapV3Oracle oracle = new UniswapV3Oracle(
-    tokenA,        // First token in pair
-    tokenB,        // Second token in pair
-    fee,           // Pool fee tier (500, 3000, or 10000)
-    twapWindow,    // TWAP window in seconds (e.g., 1800 for 30 min)
-    uniswapFactory // Uniswap V3 factory address
-);
-
-// TWAP provides manipulation-resistant pricing
-// Longer window = more resistant but slower to update
 ```
 
 **Correct (deploy rate provider oracle for LSTs):**
@@ -141,13 +122,15 @@ UniswapV3Oracle oracle = new UniswapV3Oracle(
 import {LidoOracle} from "euler-price-oracle/adapter/lido/LidoOracle.sol";
 import {RateProviderOracle} from "euler-price-oracle/adapter/rate/RateProviderOracle.sol";
 
-// For wstETH/stETH (built-in Lido support)
-LidoOracle wstethOracle = new LidoOracle(wsteth, steth);
+// For wstETH/stETH - LidoOracle has no constructor (uses hardcoded addresses)
+// Only works on mainnet with canonical STETH/WSTETH addresses
+LidoOracle wstethOracle = new LidoOracle();
+// Supports: STETH -> WSTETH and WSTETH -> STETH
 
 // For other rate providers (e.g., Balancer)
 RateProviderOracle rateOracle = new RateProviderOracle(
-    baseToken,         // e.g., rETH
-    quoteToken,        // e.g., ETH
+    base,              // e.g., rETH
+    quote,             // e.g., ETH
     rateProvider       // Balancer rate provider address
 );
 ```
@@ -168,24 +151,6 @@ ChronicleOracle oracle = new ChronicleOracle(
 // Note: Chronicle feeds require whitelisting (kiss)
 // The adapter address must be whitelisted on the Chronicle feed
 // Contact Chronicle team for production whitelisting
-```
-
-**Correct (deploy RedStoneOracle adapter):**
-
-```solidity
-import {RedstoneCoreOracle} from "euler-price-oracle/adapter/redstone/RedstoneCoreOracle.sol";
-
-// RedStone provides modular, gas-optimized oracle feeds
-RedstoneCoreOracle oracle = new RedstoneCoreOracle(
-    base,                    // Base token address
-    quote,                   // Quote token address
-    feedId,                  // RedStone feed ID (bytes32)
-    feedDecimals,            // Feed decimal precision
-    maxStaleness             // Max age in seconds
-);
-
-// RedStone requires signed price payloads in calldata
-// Use RedStone SDK to wrap transactions with price data
 ```
 
 **Correct (deploy FixedRateOracle for stablecoins):**
@@ -212,23 +177,20 @@ FixedRateOracle oracle = new FixedRateOracle(
 import {CrossAdapter} from "euler-price-oracle/adapter/CrossAdapter.sol";
 
 // CrossAdapter chains two oracles through an intermediate asset
-// Example: TOKEN -> ETH -> USD (requires TOKEN/ETH and ETH/USD oracles)
+// Constructor: (base, cross, quote, oracleBaseCross, oracleCrossQuote)
+// Note: Both cross oracles MUST be bidirectional. Does not support bid/ask pricing.
 
-CrossAdapter oracle = new CrossAdapter(
-    oracleBaseCross,    // First oracle: TOKEN/ETH
-    oracleCrossQuote,   // Second oracle: ETH/USD
-    crossAsset          // Intermediate asset: ETH (WETH address)
-);
-
-// Price flow: TOKEN -> ETH (via oracleBaseCross) -> USD (via oracleCrossQuote)
-// Useful for tokens that only have ETH pairs but vault needs USD pricing
-
-// Example: Deploy cross adapter for LINK/USD via LINK/ETH and ETH/USD
+// Example: LINK/USD via LINK/ETH and ETH/USD
 CrossAdapter linkUsdOracle = new CrossAdapter(
-    linkEthChainlinkOracle,   // LINK/ETH feed
-    ethUsdChainlinkOracle,    // ETH/USD feed  
-    weth                       // Cross through WETH
+    link,                      // base: the asset to price
+    weth,                      // cross: intermediate asset
+    usd,                       // quote: unit of account
+    linkEthChainlinkOracle,    // oracleBaseCross: LINK/ETH (must be bidirectional)
+    ethUsdChainlinkOracle      // oracleCrossQuote: ETH/USD (must be bidirectional)
 );
+
+// Price flow: LINK -> ETH (via oracleBaseCross) -> USD (via oracleCrossQuote)
+// Useful for tokens that only have ETH pairs but vault needs USD pricing
 ```
 
 **Correct (deploy PendleOracle for yield-bearing tokens):**
@@ -237,87 +199,19 @@ CrossAdapter linkUsdOracle = new CrossAdapter(
 import {PendleOracle} from "euler-price-oracle/adapter/pendle/PendleOracle.sol";
 
 // For Pendle PT (principal tokens) as collateral
+// Constructor: (pendleOracle, pendleMarket, base, quote, twapWindow)
 PendleOracle oracle = new PendleOracle(
+    pendlePYOracle,    // Pendle PY oracle address (IPPYLpOracle)
     pendleMarket,      // Pendle market address
-    twapWindow,        // TWAP window: 900-1800 seconds recommended
-    ptToken,           // PT token address (base)
-    underlyingToken    // Underlying asset (quote)
+    ptToken,           // base: PT token address
+    underlyingToken,   // quote: underlying asset
+    twapWindow         // TWAP window: 900-1800 seconds recommended (uint32)
 );
 
+// IMPORTANT: Pendle market must be initialized before deployment
+// The constructor verifies observations buffer is ready
 // Uses PendlePYOracleLib for TWAP pricing
-// Audited by Electisec (September 2024)
 ```
-
-**IMPORTANT: Pendle Market Initialization Required**
-
-Pendle markets must be initialized before the oracle can return prices:
-
-```solidity
-import {IPendleMarket} from "pendle/interfaces/IPendleMarket.sol";
-
-// Step 1: Initialize market TWAP observations
-// This must be done ONCE before using the oracle
-IPendleMarket(pendleMarket).increaseObservationsCardinalityNext(
-    cardinalityNext  // Minimum cardinality for TWAP (e.g., 144 for 30-min TWAP)
-);
-
-// Step 2: Wait for TWAP window duration to pass
-// Oracle will revert until sufficient observations are collected
-
-// Step 3: Verify oracle is ready
-(bool increaseCardinalityRequired, , bool oldestObservationSatisfied) = 
-    IPendleMarketV3(pendleMarket).getOracleState(pendleMarket, twapWindow);
-
-require(!increaseCardinalityRequired && oldestObservationSatisfied, "Market not ready");
-
-// Now oracle queries will work
-uint256 ptPriceInUnderlying = oracle.getQuote(1e18, ptToken, underlyingToken);
-```
-
-```typescript
-// TypeScript: Check if Pendle market is ready for oracle
-async function isPendleMarketReady(
-  market: Address,
-  twapWindow: number
-): Promise<boolean> {
-  const [increaseCardinalityRequired, , oldestObservationSatisfied] = 
-    await publicClient.readContract({
-      address: market,
-      abi: pendleMarketABI,
-      functionName: 'getOracleState',
-      args: [market, twapWindow]
-    });
-  
-  return !increaseCardinalityRequired && oldestObservationSatisfied;
-}
-
-// Initialize market if needed
-async function initializePendleMarket(market: Address, cardinality: number) {
-  await walletClient.writeContract({
-    address: market,
-    abi: pendleMarketABI,
-    functionName: 'increaseObservationsCardinalityNext',
-    args: [cardinality]
-  });
-  
-  console.log(`Market initialized. Wait ${twapWindow} seconds before using oracle.`);
-}
-```
-
-**Oracle Adapter Selection Guide:**
-
-| Use Case | Recommended Adapter | Configuration |
-|----------|-------------------|---------------|
-| Major pairs (ETH/USD, BTC/USD) | ChainlinkOracle | 1-4 hour staleness |
-| DeFi tokens with liquidity | UniswapV3Oracle | 15-30 min TWAP |
-| LSTs (wstETH, rETH, cbETH) | LidoOracle / RateProviderOracle | Exchange rate based |
-| New/exotic tokens | PythOracle | Pull-based, requires updates |
-| MakerDAO ecosystem | ChronicleOracle | Requires whitelisting |
-| Gas-optimized feeds | RedStoneOracle | Calldata-based pricing |
-| Stablecoins (USDC, USDT) | FixedRateOracle | 1:1 rate |
-| Cross-currency pricing | CrossAdapter | Chain through intermediate |
-| Pendle PT/LP tokens | PendleOracle | Market TWAP |
-| Wrapped tokens (WETH/ETH) | FixedRateOracle | 1:1 rate |
 
 **Verification after deployment:**
 

@@ -52,51 +52,6 @@ contract MyFlashBorrower is IFlashLoan {
 }
 ```
 
-**Flash Loan for Liquidation:**
-
-```solidity
-contract FlashLiquidator is IFlashLoan {
-    IEVC public immutable evc;
-    
-    function liquidateWithFlash(
-        address debtVault,
-        address collateralVault,
-        address violator,
-        uint256 repayAmount
-    ) external {
-        // Flash borrow the debt asset
-        IEVault(debtVault).flashLoan(
-            repayAmount,
-            abi.encode(debtVault, collateralVault, violator, repayAmount)
-        );
-    }
-    
-    function onFlashLoan(bytes memory data) external override {
-        (address debtVault, address collateralVault, address violator, uint256 repayAmount) = 
-            abi.decode(data, (address, address, address, uint256));
-        
-        address asset = IEVault(debtVault).asset();
-        
-        // Approve vault to take repayment
-        IERC20(asset).approve(debtVault, repayAmount);
-        
-        // Execute liquidation - receive collateral
-        (uint256 maxRepay, uint256 maxYield) = IEVault(debtVault).checkLiquidation(
-            address(this), violator, collateralVault
-        );
-        
-        IEVault(debtVault).liquidate(violator, collateralVault, repayAmount, 0);
-        
-        // Swap collateral for debt asset (implement your swap logic)
-        uint256 collateralReceived = IERC20(collateralVault).balanceOf(address(this));
-        uint256 debtAssetReceived = swapCollateralForDebt(collateralVault, asset, collateralReceived);
-        
-        // Return borrowed amount to vault (keep profit)
-        IERC20(asset).transfer(msg.sender, repayAmount);
-    }
-}
-```
-
 **TypeScript: Flash loan via EVC batch:**
 
 ```typescript
@@ -220,84 +175,6 @@ const batchItems: BatchItem[] = [
 
 await evc.batch(batchItems);
 // Old account now has 0 debt, can withdraw collateral
-```
-
-**Touch - Force Interest Accrual:**
-
-```solidity
-// touch() forces interest accrual without any other operation
-// Useful for:
-// - Updating interest accumulator before queries
-// - Ensuring accurate debtOf/totalBorrows values
-// - MEV protection in some scenarios
-
-IEVault(vault).touch();
-
-// Now all debt-related queries reflect latest interest
-uint256 exactDebt = vault.debtOf(account);
-```
-
-**Borrowing View Functions:**
-
-```solidity
-// Total borrows across all borrowers (rounded up)
-uint256 totalBorrows = vault.totalBorrows();
-
-// Exact total borrows in internal precision
-uint256 totalBorrowsExact = vault.totalBorrowsExact();
-
-// Available cash in vault (not borrowed)
-uint256 availableCash = vault.cash();
-
-// Account debt (rounded up)
-uint256 debt = vault.debtOf(account);
-
-// Exact debt in internal precision
-uint256 debtExact = vault.debtOfExact(account);
-
-// Current interest rate (per second, scaled by 1e27)
-uint256 rate = vault.interestRate();
-
-// Interest accumulator (tracks compounded interest)
-uint256 accumulator = vault.interestAccumulator();
-
-// DToken address (synthetic debt token for tracking)
-address dToken = vault.dToken();
-```
-
-**TypeScript: Complete view function example:**
-
-```typescript
-const vault = getContract({
-  address: vaultAddress,
-  abi: evaultABI,
-  client: publicClient
-});
-
-// Vault state
-const totalBorrows = await vault.read.totalBorrows();
-const cash = await vault.read.cash();
-const totalAssets = await vault.read.totalAssets();
-
-// Utilization = totalBorrows / (totalBorrows + cash)
-const utilization = totalBorrows * 10000n / (totalBorrows + cash);
-
-// Interest rate (convert from per-second to APY)
-const ratePerSecond = await vault.read.interestRate();
-const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
-const RAY = 10n ** 27n;
-// Approximate APY: (1 + rate)^seconds - 1
-const borrowAPY = (ratePerSecond * SECONDS_PER_YEAR * 100n) / RAY;
-
-console.log(`Total Borrows: ${formatUnits(totalBorrows, 18)}`);
-console.log(`Cash: ${formatUnits(cash, 18)}`);
-console.log(`Utilization: ${utilization / 100n}%`);
-console.log(`Borrow APY: ~${borrowAPY}%`);
-
-// Account debt
-const myDebt = await vault.read.debtOf([myAccount]);
-const myDebtExact = await vault.read.debtOfExact([myAccount]);
-console.log(`My Debt: ${formatUnits(myDebt, 18)}`);
 ```
 
 Reference: [EVault Borrowing Module](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Borrowing.sol)

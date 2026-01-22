@@ -1,7 +1,7 @@
 ---
 title: Delegate Control via Operators
 impact: HIGH
-impactDescription: Enable automated strategies and position management
+impactDescription: Delegate control over your accounts to other addresses for automated strategies and position management
 tags: evc, operators, delegation, automation, permissions
 ---
 
@@ -131,8 +131,8 @@ contract LimitedOperator {
 
 Key differences from controllers:
 - Operators can be revoked by account owner at any time
-- Controllers cannot be revoked (only by controller itself)
-- Operators cannot change collateral/controller sets
+- Controllers cannot be revoked (only by controller itself when debt is repaid)
+- Operators CAN change collateral/controller sets on behalf of the account
 - Operators are for delegation, controllers are for borrowing
 
 Reference: [EVC Whitepaper - Operators](https://github.com/euler-xyz/ethereum-vault-connector/blob/master/docs/whitepaper.md#operators)

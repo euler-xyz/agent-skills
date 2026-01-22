@@ -25,7 +25,7 @@ import {IEVault} from "evk/EVault/IEVault.sol";
 import {IEVC} from "ethereum-vault-connector/interfaces/IEVC.sol";
 
 // Each vault is independent - there can be multiple USDC vaults
-// with different configurations (oracle, IRM, collaterals)
+// with different configurations (oracle, IRM, collaterals and risk profile)
 address usdcVault = 0x...; // A specific USDC vault
 
 // Vaults are standard ERC-4626 with extensions
@@ -38,8 +38,8 @@ address irm = vault.interestRateModel(); // Interest rate model
 address unitOfAccount = vault.unitOfAccount(); // Price denomination
 
 // Collateral relationships are vault-to-vault
-// This vault accepts another vault's shares as collateral
-address[] memory collaterals = vault.LTVList();
+// This vault accepts another vaults' shares (not vaults' assets) as collateral
+address[] memory collaterals = vault.LTVList(); // this is an append only list and may contain addresses that are no longer accepted as collateral
 (uint16 borrowLTV, uint16 liquidationLTV, , ) = vault.LTVFull(collateralVault);
 ```
 
@@ -47,7 +47,7 @@ address[] memory collaterals = vault.LTVList();
 
 ```solidity
 // The EVC (Ethereum Vault Connector) orchestrates cross-vault operations
-IEVC evc = IEVC(0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383);
+IEVC evc = IEVC(0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383); // this address is different on each chain
 
 // Accounts enable a vault as collateral for their positions
 evc.enableCollateral(account, collateralVault);
@@ -56,7 +56,7 @@ evc.enableCollateral(account, collateralVault);
 evc.enableController(account, borrowVault);
 
 // The controller vault checks all collateral vaults to ensure solvency
-// This happens automatically during deferred checks
+// This happens automatically at the end of the operation/batch of operations
 ```
 
 **Key Architecture Concepts:**
@@ -64,8 +64,8 @@ evc.enableController(account, borrowVault);
 1. **Vaults are ERC-4626**: Standard deposit/withdraw interface plus borrowing extensions
 2. **Oracles per vault**: Each vault has its own EulerRouter for price resolution
 3. **Unit of Account**: Common price denomination (usually USD or ETH) for LTV calculations
-4. **Collateral is vault shares**: When you deposit, you get vault shares that can be collateral
-5. **Controller relationship**: The vault you borrow from is your "controller"
+4. **Collateral is vault shares**: When you deposit, you get vault shares that can be accepted as collateral
+5. **Controller relationship**: The vault you borrow from is your "controller". It decides if the position is healthy or requires a liquidation. It controls how much collateral user can withdraw when having an active borrow position
 6. **LTV is vault-to-vault**: Each collateral-controller pair has specific LTV settings
 
 ```typescript
@@ -78,7 +78,7 @@ const vault = getContract({
   client: publicClient,
 });
 
-// Get all accepted collaterals for this vault
+// Get all accepted collaterals for this vault (this is an append only list and may contain addresses that are no longer accepted as collateral)
 const ltvList = await vault.read.LTVList();
 
 // For each collateral, get LTV configuration
@@ -115,6 +115,12 @@ Euler's modular architecture enables various market structures. Choose based on 
 // - USDC vault: accepts WETH as collateral, lends USDC
 // - Assets earn yield while backing loans
 
+// Example: Multiple collateral vaults (Compound-style)
+// - USDC vault: accepts WETH, WBTC, DAI, etc. as collateral
+// - Only USDC is supplied and borrowed
+// - Users can deposit various assets as collateral to borrow/supply USDC
+// - Each collateral type can have different LTV and risk parameters
+
 // Example: Cross-collateralised cluster (Aave-style)
 // - WETH, WBTC, USDC, DAI vaults all interconnected
 // - Each can lend and serve as collateral for others
@@ -131,7 +137,7 @@ Euler's modular architecture enables various market structures. Choose based on 
 address myVault = EVaultFactory.createProxy(
     asset,
     false,  // not upgradeable
-    ""      // no trailing data
+    ""      // no trailing data (only for the example; otherwise it's required)
 );
 
 // Step 2: Configure to accept existing vault shares as collateral

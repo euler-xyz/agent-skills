@@ -1,6 +1,6 @@
 ---
 name: how-to-fetch-euler-data-lens
-description: Developer tools and data access guide for Euler Finance V2. This skill should be used when querying vault data via Lens contracts, fetching historical data from subgraphs, accessing contract interfaces, or deploying vaults via Euler Creator. Triggers on tasks involving VaultLens, OracleLens, subgraph queries, ABIs, or no-code deployment.
+description: Developer tools and data access guide for Euler Finance V2. This skill should be used when querying vault/account data via Lens contracts, tracking active accounts via subgraph, or accessing contract interfaces. Triggers on tasks involving AccountLens, VaultLens, OracleLens, subgraph queries, or ABIs.
 license: MIT
 metadata:
   author: Euler Labs
@@ -14,10 +14,10 @@ Developer tools and data access guide for Euler Finance V2. Covers Lens contract
 ## When to Apply
 
 Reference these guidelines when:
-- Querying vault data using Lens contracts (VaultLens, OracleLens, UtilsLens)
-- Fetching historical data from Euler subgraphs
+- Querying account positions and health using AccountLens
+- Querying vault data using Lens contracts (VaultLens, OracleLens, IRMLens, UtilsLens)
+- Tracking active accounts via Euler subgraph
 - Looking up contract addresses and ABIs
-- Deploying vaults using Euler Creator (no-code)
 - Building dashboards or analytics for Euler
 - Integrating with Euler from frontends or bots
 
@@ -25,32 +25,28 @@ Reference these guidelines when:
 
 | Rule | Impact | Description |
 |------|--------|-------------|
-| `tools-lens` | MEDIUM | Query vault and oracle data via Lens contracts |
-| `tools-subgraphs` | MEDIUM | Fetch historical data from Euler subgraphs |
+| `tools-lens` | MEDIUM | Query vault, account, and oracle data via Lens contracts |
+| `tools-subgraphs` | MEDIUM | Track active accounts and vault factories via subgraph |
 | `tools-interfaces` | MEDIUM | Contract addresses and ABI references |
-| `tools-creator` | MEDIUM | No-code vault deployment via Euler Creator |
 
 ## Quick Reference
 
 ### Lens Contracts
 
-- **VaultLens** - Query vault state, positions, APYs
+- **AccountLens** - Query account positions, liquidity, health factor, time to liquidation (TTL)
+- **VaultLens** - Query vault state, configuration, LTVs, IRM info
 - **OracleLens** - Check oracle configuration and prices
-- **UtilsLens** - Utility functions for data formatting
-- **EulerEarnVaultLens** - Query EulerEarn vault data
+- **IRMLens** - Interest rate model details and calculations
+- **UtilsLens** - Utility functions: APY calculations, token balances, allowances
+- **EulerEarnVaultLens** - Query EulerEarn vault data and strategies
 
 ### Subgraphs
 
-- Vault deployments and configurations
-- Historical interest rates and utilization
-- Liquidation events and user positions
-- Oracle price history
+The subgraph is intentionally minimal - use Lens contracts for detailed data:
 
-### Key Endpoints
-
-- Mainnet: `https://api.thegraph.com/subgraphs/name/euler-xyz/euler-v2`
-- Use `getVaultInfoFull` for comprehensive vault data
-- Batch queries with multicall for efficiency
+- **Vault** - Track which factory created each vault
+- **TrackingActiveAccount** - Active accounts indexed by address prefix (first 19 bytes)
+- **TrackingVaultBalance** - Per-account vault balances and debt (at the time of the last update)
 
 ## Companion Skills
 
@@ -68,7 +64,6 @@ Read individual rule files for detailed explanations and code examples:
 rules/tools-lens.md
 rules/tools-subgraphs.md
 rules/tools-interfaces.md
-rules/tools-creator.md
 ```
 
 ## Full Compiled Document

@@ -28,41 +28,7 @@ IERC20(asset).approve(vault, amount);
 uint256 shares = IEVault(vault).deposit(amount, receiver);
 ```
 
-**Correct (using Permit2 for gasless approvals):**
-
-```typescript
-import { signPermit2 } from '@eulerxyz/euler-sdk';
-
-// Euler vaults support Permit2 for single-transaction deposits
-const permit2Signature = await signPermit2({
-  token: assetAddress,
-  amount: depositAmount,
-  spender: vaultAddress,
-  deadline: Math.floor(Date.now() / 1000) + 3600,
-});
-
-// Batch via EVC for atomic approval + deposit
-const batchItems = [
-  {
-    targetContract: permit2Address,
-    onBehalfOfAccount: userAddress,
-    value: 0n,
-    data: encodePermit2Transfer(permit2Signature),
-  },
-  {
-    targetContract: vaultAddress,
-    onBehalfOfAccount: userAddress,
-    value: 0n,
-    data: encodeFunctionData({
-      abi: eVaultABI,
-      functionName: 'deposit',
-      args: [depositAmount, userAddress],
-    }),
-  },
-];
-
-await evc.batch(batchItems);
-```
+Euler vaults also support [Permit2](https://github.com/Uniswap/permit2) for gasless approvals.
 
 **Correct (using mint instead of deposit):**
 

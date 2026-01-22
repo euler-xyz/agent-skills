@@ -51,26 +51,10 @@ function validateRule(rule: Rule, file: string, skillName: string): ValidationEr
       skill: skillName,
       file,
       ruleId: rule.id,
-      message: 'Missing examples (need at least one incorrect and one correct example)',
+      message: 'Missing examples (need at least one code example)',
     })
   } else {
     const codeExamples = rule.examples.filter((e) => e.code && e.code.trim().length > 0)
-
-    const hasBad = codeExamples.some(
-      (e) =>
-        e.label.toLowerCase().includes('incorrect') ||
-        e.label.toLowerCase().includes('wrong') ||
-        e.label.toLowerCase().includes('bad')
-    )
-
-    const hasGood = codeExamples.some(
-      (e) =>
-        e.label.toLowerCase().includes('correct') ||
-        e.label.toLowerCase().includes('good') ||
-        e.label.toLowerCase().includes('usage') ||
-        e.label.toLowerCase().includes('implementation') ||
-        e.label.toLowerCase().includes('example')
-    )
 
     if (codeExamples.length === 0) {
       errors.push({
@@ -79,14 +63,9 @@ function validateRule(rule: Rule, file: string, skillName: string): ValidationEr
         ruleId: rule.id,
         message: 'Missing code examples',
       })
-    } else if (!hasBad && !hasGood) {
-      errors.push({
-        skill: skillName,
-        file,
-        ruleId: rule.id,
-        message: 'Missing incorrect or correct examples',
-      })
     }
+    // Note: We no longer require explicit "incorrect"/"correct" labels.
+    // Procedural/reference content may have descriptive labels instead.
   }
 
   const validImpacts: Rule['impact'][] = [

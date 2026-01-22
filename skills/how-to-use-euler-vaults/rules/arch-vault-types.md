@@ -1,13 +1,13 @@
 ---
-title: Understanding Vault Types (Core, Edge, Escrow)
+title: Understanding Vault Types (Governed, Ungoverned, Escrowed Collateral)
 impact: HIGH
 impactDescription: Critical for selecting appropriate vault type for your use case
-tags: architecture, vault, core, edge, escrow, perspective
+tags: architecture, vault, governed, ungoverned, escrow, perspective
 ---
 
-## Understanding Vault Types (Core, Edge, Escrow)
+## Understanding Vault Types (Governed, Ungoverned, Escrowed Collateral)
 
-Euler V2 has three distinct vault types, each serving different purposes and with different governance characteristics.
+Euler V2 vaults fall into two main categories based on governance: **Governed** (with active governance) and **Ungoverned** (governance renounced). Escrowed Collateral vaults are a special subtype of ungoverned vaults designed for collateral-only use cases.
 
 **Incorrect (treating all vaults the same):**
 
@@ -20,55 +20,84 @@ vault.setInterestRateModel(irm); // May not be configurable!
 
 **Correct (understanding vault types):**
 
-### 1. Core Vaults (Governed)
+### 1. Governed Vaults
 
-Full-featured lending vaults with governance. Created via `GenericFactory` and verified by `GovernedPerspective`.
+Full-featured lending vaults with active governance (risk management). The governor can update parameters like LTV, caps, IRM, and oracle configuration over time.
+
+> ⚠️ **Trust Warning:** Users must fully trust the governor address. The governor has significant power over vault parameters and could potentially act maliciously (e.g., setting dangerous LTVs, changing oracles, or extracting fees). Always verify who controls governance before depositing - whether it's an EOA, multisig, DAO, or limited governor contract.
 
 ```solidity
 import {GenericFactory} from "evk/GenericFactory/GenericFactory.sol";
 import {IEVault} from "evk/EVault/IEVault.sol";
 
-// Core vaults have full configuration
-IEVault coreVault = IEVault(coreVaultAddress);
+// Governed vaults have full configuration capabilities
+IEVault vault = IEVault(vaultAddress);
 
 // Has governor for ongoing management
-address governor = coreVault.governorAdmin();
+address governor = vault.governorAdmin();
+require(governor != address(0), "This is a governed vault");
 
-// Full IRM and oracle configuration
-address irm = coreVault.interestRateModel();
-address oracle = coreVault.oracle();
+// Governor can update configuration
+vault.setInterestRateModel(newIRM);
+vault.setLTV(collateral, borrowLTV, liquidationLTV, rampDuration);
+vault.setCaps(supplyCap, borrowCap);
 
 // Supports all operations: deposit, withdraw, borrow, repay
-coreVault.deposit(amount, receiver);
-coreVault.borrow(amount, receiver);
+vault.deposit(amount, receiver);
+vault.borrow(amount, receiver);
 ```
 
-### 2. Edge Vaults (Ungoverned)
+**Limited Governor Pattern:**
 
-Pre-configured vaults with governance permanently renounced. Created via `EdgeFactory` for specific use cases.
+Instead of a full EOA or multisig as governor, you can set a **limited governor contract** that only allows specific parameter changes. This provides a middle ground between full governance and complete immutability.
 
 ```solidity
-import {IEdgeFactory} from "evk-periphery/EdgeFactory/interfaces/IEdgeFactory.sol";
+// Example: CapRiskSteward only allows cap adjustments within limits
+import {CapRiskSteward} from "evk-periphery/Governor/CapRiskSteward.sol";
 
-// Edge vaults are deployed with fixed configuration
-// Governance is renounced at deployment - no future changes
-IEdgeFactory.DeployParams memory params = IEdgeFactory.DeployParams({
-    vaults: vaultParams,      // Vault configurations
-    router: routerParams,     // Oracle configuration
-    ltv: ltvParams,           // LTV relationships
-    unitOfAccount: usdAddress // Unit of account
-});
+// Deploy a limited governor that can only adjust caps
+CapRiskSteward steward = new CapRiskSteward(
+    evc,
+    admin,           // Who can call the steward
+    3 days,          // Cooldown between adjustments
+    0.1e18           // Max 10% change per adjustment
+);
 
-(address router, address[] memory vaults) = edgeFactory.deploy(params);
+// Set the steward as the vault's governor
+vault.setGovernorAdmin(address(steward));
 
-// Edge vaults have NO governor after deployment
-IEVault edgeVault = IEVault(vaults[0]);
-require(edgeVault.governorAdmin() == address(0), "Ungoverned");
+// Now only cap changes (within limits) are possible
+// Other governance functions like setLTV, setIRM will revert
+steward.setSupplyCap(vaultAddress, newSupplyCap);
+steward.setBorrowCap(vaultAddress, newBorrowCap);
 ```
 
-### 3. Escrow Vaults (Collateral-Only)
+This pattern is useful when you want restricted, predictable governance rather than full control or complete immutability.
 
-Special vaults that only hold collateral - no borrowing, no IRM, no oracle. Created for pure collateral positions.
+### 2. Ungoverned Vaults
+
+Vaults with governance permanently renounced (`governorAdmin == address(0)`). Configuration is fixed at deployment and cannot be changed. This provides immutability guarantees but no flexibility.
+
+```solidity
+// Ungoverned vaults have fixed configuration
+IEVault vault = IEVault(vaultAddress);
+
+// Governor is address(0) - no one can change parameters
+require(vault.governorAdmin() == address(0), "Ungoverned vault");
+
+// These calls will revert with E_Unauthorized:
+// vault.setInterestRateModel(newIRM);  // Cannot change
+// vault.setLTV(collateral, ltv, ltv, 0);  // Cannot change
+// vault.setCaps(cap, cap);  // Cannot change
+
+// Normal operations still work
+vault.deposit(amount, receiver);
+vault.borrow(amount, receiver);  // If borrowing is configured
+```
+
+### 3. Escrowed Collateral Vaults (Ungoverned Subtype)
+
+Special ungoverned vaults designed purely for holding collateral. They have no oracle, no IRM, and no borrowing capability and are neutral (can be reused by anyone). One escrow vault exists per asset (singleton pattern).
 
 ```solidity
 import {EscrowedCollateralPerspective} from "evk-periphery/Perspectives/deployed/EscrowedCollateralPerspective.sol";
@@ -82,11 +111,11 @@ if (escrowVault == address(0)) {
     bytes memory trailingData = abi.encodePacked(asset, address(0), address(0));
     escrowVault = GenericFactory(factory).createProxy(address(0), true, trailingData);
     
-    // Escrow vaults have minimal config
+    // Escrow vaults have minimal config and renounced governance
     IEVault(escrowVault).setHookConfig(address(0), 0);
     IEVault(escrowVault).setGovernorAdmin(address(0));
     
-    // Verify in perspective
+    // Verify in perspective so that others can reuse this vault later
     perspective.perspectiveVerify(escrowVault, true);
 }
 
@@ -97,6 +126,7 @@ if (escrowVault == address(0)) {
 // - No caps
 // - No hooks
 // - No LTV list (cannot be borrowed against directly)
+// - Governance renounced (address(0))
 ```
 
 **Correct (using Perspectives to verify vault type):**
@@ -121,20 +151,29 @@ const escrowPerspective = getContract({
 const isGoverned = await governedPerspective.read.isVerified([vaultAddress]);
 const isEscrow = await escrowPerspective.read.isVerified([vaultAddress]);
 
-// Perspectives provide trust guarantees
-// - GovernedPerspective: vetted by Euler governance
+// Check governance status directly
+const vault = getContract({
+  address: vaultAddress,
+  abi: evaultABI,
+  client: publicClient,
+});
+const governor = await vault.read.governorAdmin();
+const isUngoverned = governor === '0x0000000000000000000000000000000000000000';
+
+// Perspectives provide trust guarantees:
+// - GovernedPerspective: whitelisted by Euler
 // - EscrowedCollateralPerspective: verified collateral-only vault
 // - EVKFactoryPerspective: deployed by official factory
-// - EdgeFactoryPerspective: deployed by Edge factory
 ```
 
-| Feature | Core Vault | Edge Vault | Escrow Vault |
-|---------|-----------|------------|--------------|
-| Borrowing | ✓ | ✓ | ✗ |
-| Governance | ✓ | ✗ (renounced) | ✗ |
+| Feature | Governed Vault | Ungoverned Vault | Escrowed Collateral |
+|---------|----------------|------------------|---------------------|
+| Borrowing | ✓ | ✓ (if configured) | ✗ |
+| Governance | ✓ | ✗ (renounced) | ✗ (renounced) |
 | Oracle | ✓ | ✓ (fixed) | ✗ |
 | IRM | ✓ | ✓ (fixed) | ✗ |
 | Caps | ✓ | ✓ (fixed) | ✗ |
 | Can be collateral | ✓ | ✓ | ✓ |
+| Config changeable | ✓ | ✗ | ✗ |
 
-Reference: [EscrowedCollateralPerspective.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/Perspectives/deployed/EscrowedCollateralPerspective.sol), [EdgeFactory.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/EdgeFactory/EdgeFactory.sol)
+Reference: [EscrowedCollateralPerspective.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/Perspectives/deployed/EscrowedCollateralPerspective.sol)

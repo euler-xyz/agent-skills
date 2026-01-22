@@ -32,15 +32,6 @@ Reference these guidelines when:
 
 ## Quick Reference
 
-### Hook Operations
-
-| Flag | Operation |
-|------|-----------|
-| 1 << 0 | DEPOSIT |
-| 1 << 6 | BORROW |
-| 1 << 11 | LIQUIDATE |
-| 1 << 12 | FLASHLOAN |
-
 ### Key Concepts
 
 1. **Hooks** - Custom logic before vault operations

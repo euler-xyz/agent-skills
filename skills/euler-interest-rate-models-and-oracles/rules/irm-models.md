@@ -7,20 +7,20 @@ tags: irm, interest-rate, kink, adaptive, configuration
 
 ## Interest Rate Model Types and Configuration
 
-Euler V2 supports multiple Interest Rate Model (IRM) types, each suited for different market dynamics and risk profiles.
+Euler V2 supports multiple Interest Rate Model (IRM) types, each suited for different market dynamics and risk profiles. Governors can also bring their own custom IRM as long as it conforms to the `IIRM` interface, though custom IRMs may not be supported by the Euler UI.
 
-**Incorrect (using wrong IRM for use case):**
+**Incorrect (misconfigured IRM parameters):**
 
 ```solidity
-// WRONG: Using linear kink for a volatile asset that needs adaptive rates
-// This can lead to under/over-utilization and poor capital efficiency
+// WRONG: Poorly configured IRM parameters
+// This can lead to suboptimal utilization and poor lender returns
 address irm = kinkIRMFactory.deploy(
     0,           // baseRate
-    4e27,        // slope1 (too high!)
-    300e27,      // slope2 (too high!)
-    3865470566   // kink: 90% (type(uint32).max * 9 / 10)
+    4e27,        // slope1: way too high - discourages borrowing
+    300e27,      // slope2: extreme spike after kink
+    3865470566   // kink: 90%
 );
-// Static rates don't adapt to market conditions!
+// Result: rates too high → low utilization → poor capital efficiency
 ```
 
 **Correct (choosing appropriate IRM type):**
@@ -52,6 +52,17 @@ address kinkIRM = EulerKinkIRMFactory(kinkIRMFactory).deploy(
 // - 90%: 3865470566  (type(uint32).max * 9 / 10)
 ```
 
+Use the helper script to calculate parameters from human-readable APY values:
+
+```bash
+# Usage: node calculate-irm-linear-kink.js borrow <baseIr> <kinkIr> <maxIr> <kink>
+# Example: Base=0%, Kink(90%)=4% APY, Max=100% APY
+node calculate-irm-linear-kink.js borrow 0 4 100 90
+# Output: 0, 1406417851, 19050045013, 3865470566
+```
+
+See: [calculate-irm-linear-kink.js](https://github.com/euler-xyz/evk-periphery/blob/development/script/utils/calculate-irm-linear-kink.js)
+
 ### 2. Adaptive Curve IRM (IRMAdaptiveCurve)
 
 Self-adjusting model that targets specific utilization. Rate at target adjusts based on time spent above/below target.
@@ -74,6 +85,17 @@ address adaptiveIRM = EulerIRMAdaptiveCurveFactory(adaptiveCurveFactory).deploy(
 // - Utilization below target → rate decreases
 // - Bounded by MIN and MAX rates at target
 ```
+
+Use the helper script to calculate parameters from human-readable APY values:
+
+```bash
+# Usage: node calculate-irm-adaptive-curve.js <targetUtilization> <initialIrAtTarget> <minIrAtTarget> <maxIrAtTarget> [curveSteepness] [adjustmentSpeedDays]
+# Example: Target=90%, Initial=4% APY, Min=0.1% APY, Max=200% APY
+node calculate-irm-adaptive-curve.js 90 4 0.1 200
+# Default: curveSteepness=4.0, adjustmentSpeedDays=7
+```
+
+See: [calculate-irm-adaptive-curve.js](https://github.com/euler-xyz/evk-periphery/blob/development/script/utils/calculate-irm-adaptive-curve.js)
 
 ### 3. Linear Kinky IRM (IRMLinearKinky)
 
@@ -113,34 +135,5 @@ address cyclicalIRM = EulerFixedCyclicalBinaryIRMFactory(factory).deploy(
     block.timestamp  // startTimestamp: when first cycle begins
 );
 ```
-
-### 5. Base Premium IRM (IRMBasePremium)
-
-Admin-controlled fixed rate with per-vault overrides. Good for curated markets.
-
-```solidity
-import {IRMBasePremium} from "evk-periphery/IRM/IRMBasePremium.sol";
-
-// Admin can adjust rates without redeploying
-IRMBasePremium irm = new IRMBasePremium(
-    evc,
-    admin,
-    1e26,         // baseRate: 1% base
-    5e26          // premiumRate: 5% premium (total 6%)
-);
-
-// Override premium for specific vaults
-irm.setRateOverride(specialVault, true, 2e26); // 3% total for this vault
-```
-
-**Selecting the Right IRM:**
-
-| Use Case | Recommended IRM | Reason |
-|----------|-----------------|--------|
-| Stable coins (USDC, DAI) | Linear Kink | Predictable behavior |
-| Volatile assets (ETH, BTC) | Adaptive Curve | Self-adjusts to demand |
-| New markets | Adaptive Curve | Finds optimal rate |
-| Curated/governed | Base Premium | Direct control |
-| Synthetic assets | Fixed Cyclical | Special mechanics |
 
 Reference: [IRM Contracts](https://github.com/euler-xyz/evk-periphery/tree/master/src/IRM)
