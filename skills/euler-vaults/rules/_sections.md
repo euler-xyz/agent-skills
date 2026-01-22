@@ -4,10 +4,10 @@ This file defines all sections, their ordering, impact levels, and descriptions.
 The section ID (in parentheses) is the filename prefix used to group rules.
 
 > **Note:** Specialized topics have been moved to companion skills:
-> - `euler-interest-rate-models-and-oracles` - Oracle adapters, price resolution, Interest Rate Models
-> - `interact-with-euler-earn` - EulerEarn yield aggregation
-> - `use-euler-feeflow-hooks-rewardEUL-flashloan` - Hooks, flash loans, fee flow, rewards
-> - `how-to-fetch-euler-data-lens` - Lens contracts, subgraphs, developer tools
+> - `euler-irm-oracles` - Oracle adapters, price resolution, Interest Rate Models
+> - `euler-earn` - EulerEarn yield aggregation
+> - `euler-advanced` - Hooks, flash loans, fee flow, rewards
+> - `euler-data` - Lens contracts, subgraphs, developer tools
 
 ---
 

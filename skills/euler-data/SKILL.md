@@ -1,6 +1,6 @@
 ---
-name: how-to-fetch-euler-data-lens
-description: Developer tools and data access guide for Euler Finance V2. This skill should be used when querying vault/account data via Lens contracts, tracking active accounts via subgraph, or accessing contract interfaces. Triggers on tasks involving AccountLens, VaultLens, OracleLens, subgraph queries, or ABIs.
+name: euler-data
+description: Developer tools and data access guide for Euler Finance V2. This skill should be used when querying vault data via Lens contracts, fetching historical data from subgraphs, accessing contract interfaces, or deploying vaults via Euler Creator. Triggers on tasks involving VaultLens, OracleLens, subgraph queries, ABIs, or no-code deployment.
 license: MIT
 metadata:
   author: Euler Labs
@@ -50,10 +50,10 @@ The subgraph is intentionally minimal - use Lens contracts for detailed data:
 
 ## Companion Skills
 
-- `how-to-use-euler-vaults` - Core vault operations, EVC, risk management
-- `euler-interest-rate-models-and-oracles` - Oracle adapters and interest rate models
-- `interact-with-euler-earn` - Yield aggregation vaults
-- `use-euler-feeflow-hooks-rewardEUL-flashloan` - Hooks, flash loans, fee flow
+- `euler-vaults` - Core vault operations, EVC, risk management
+- `euler-irm-oracles` - Oracle adapters and interest rate models
+- `euler-earn` - Yield aggregation vaults
+- `euler-advanced` - Hooks, flash loans, fee flow
 
 ## How to Use
 

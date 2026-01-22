@@ -194,18 +194,18 @@ export async function parseRuleFile(filePath: string, skillName?: string): Promi
   
   // Section mappings per skill
   const sectionMaps: Record<string, Record<string, number>> = {
-    'how-to-use-euler-vaults': {
+    'euler-vaults': {
       vault: 1,
       evc: 2,
       risk: 3,
       arch: 4,
       sec: 5,
     },
-    'euler-interest-rate-models-and-oracles': {
+    'euler-irm-oracles': {
       oracle: 1,
       irm: 2,
     },
-    'how-to-fetch-euler-data-lens': {
+    'euler-data': {
       tools: 1,
     },
   }

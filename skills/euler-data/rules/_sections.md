@@ -1,6 +1,6 @@
 # Sections
 
-This file defines the section for the how-to-fetch-euler-data-lens skill.
+This file defines the section for the euler-data skill.
 
 ---
 
