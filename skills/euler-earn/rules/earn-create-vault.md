@@ -155,9 +155,9 @@ for (const call of setupCalls) {
 address escrowVault = createEscrowVault(asset);
 
 // Add to EulerEarn with infinite cap
-earn.submitCap(escrowVault, type(uint184).max);
+earn.submitCap(IERC4626(escrowVault), type(uint184).max);
 // Wait for timelock...
-earn.acceptCap(escrowVault);
+earn.acceptCap(IERC4626(escrowVault));
 
 // Put at end of supply queue (last priority)
 // Funds only go here if other strategies are full
@@ -204,8 +204,9 @@ if (!canUseStrategy) {
   console.error('Strategy not verified by perspective');
 }
 
-// Get all deployed vaults
-const allVaults = await factory.read.getVaultListSlice([0n, BigInt(2n ** 256n - 1n)]);
+// Get all deployed vaults (pass type(uint256).max for end)
+const MAX_UINT256 = 2n ** 256n - 1n;
+const allVaults = await factory.read.getVaultListSlice([0n, MAX_UINT256]);
 ```
 
 Reference: [EulerEarn README](https://github.com/euler-xyz/euler-earn#readme), [EulerEarnFactory.sol](https://github.com/euler-xyz/euler-earn/blob/master/src/EulerEarnFactory.sol)

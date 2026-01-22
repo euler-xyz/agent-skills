@@ -19,7 +19,7 @@ Reference these guidelines when:
 - Transferring debt between accounts with pullDebt
 - Understanding fee flow and Dutch auctions
 - Working with locked EUL reward tokens
-- Implementing pause guardians or access control
+- Implementing access control hooks
 
 ## Rule Categories
 
@@ -31,15 +31,6 @@ Reference these guidelines when:
 | `adv-rewards-eul` | MEDIUM | EUL reward token vesting and distribution |
 
 ## Quick Reference
-
-### Hook Operations
-
-| Flag | Operation |
-|------|-----------|
-| 1 << 0 | DEPOSIT |
-| 1 << 6 | BORROW |
-| 1 << 11 | LIQUIDATE |
-| 1 << 12 | FLASHLOAN |
 
 ### Key Concepts
 
@@ -54,7 +45,6 @@ Reference these guidelines when:
 - `euler-vaults` - Core vault operations, EVC, risk management
 - `euler-irm-oracles` - Oracle adapters and interest rate models
 - `euler-earn` - Yield aggregation vaults
-- `euler-swap` - AMM integration
 - `euler-data` - Lens contracts and data querying
 
 ## How to Use

@@ -15,7 +15,6 @@ export const SKILLS_BASE_DIR = join(__dirname, '..', '..', '..', 'skills')
 export const SKILL_NAMES = [
   'euler-vaults',
   'euler-irm-oracles',
-  'euler-swap',
   'euler-earn',
   'euler-advanced',
   'euler-data',

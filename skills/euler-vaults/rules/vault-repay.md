@@ -19,56 +19,31 @@ IEVault(vault).repay(originalBorrow, account);
 // Still has dust debt remaining!
 ```
 
-**Correct (query current debt and repay with buffer):**
+**Correct (partial repay - specify exact amount):**
 
 ```solidity
-// Get the current debt amount (includes accrued interest)
+// Get current debt to understand position
 uint256 currentDebt = IEVault(vault).debtOf(account);
 
-// Add a small buffer for interest accruing during tx
-uint256 repayAmount = currentDebt + (currentDebt / 1000); // 0.1% buffer
-
+// Repay a specific amount (must be <= current debt, otherwise reverts)
+uint256 repayAmount = currentDebt / 2; // repay half
 IERC20(asset).approve(vault, repayAmount);
-
-// Repay - excess will be refunded or you can use type(uint256).max
-uint256 actualRepaid = IEVault(vault).repay(currentDebt, account);
+IEVault(vault).repay(repayAmount, account);
 ```
 
-**Correct (repay max to clear all debt):**
+**Correct (full repay - use type(uint256).max):**
 
 ```solidity
-// Use type(uint256).max to repay entire debt
-// This handles interest accrual automatically
-uint256 maxDebt = IEVault(vault).debtOf(account);
+// To repay ALL debt, use type(uint256).max
+// This is the only safe way to clear debt completely (handles interest accrual)
+// IMPORTANT: Repaying more than owed will REVERT - do not add buffers
 
-// Approve enough to cover debt plus any interest during tx
-IERC20(asset).approve(vault, type(uint256).max);
+// Approve enough to cover debt
+uint256 currentDebt = IEVault(vault).debtOf(account);
+IERC20(asset).approve(vault, currentDebt + (currentDebt / 100)); // small buffer for approval only
 
-// This will repay exactly the current debt amount
+// Use max value to repay - pulls exactly what's owed
 IEVault(vault).repay(type(uint256).max, account);
-
-// After full repayment, disable controller if not needed
-// Only the controller vault can disable itself
-// This happens automatically if debt reaches zero
-```
-
-**Correct (partial repay to improve health factor):**
-
-```typescript
-// Calculate how much to repay to reach target health factor
-const currentDebt = await vault.debtOf(account);
-const currentHealth = await accountLens.getAccountHealth(account);
-
-// Repay enough to reach 1.5 health factor
-const targetHealth = 1.5e18;
-const requiredRepay = calculateRepayForHealth(
-  currentDebt,
-  currentHealth,
-  targetHealth
-);
-
-await asset.approve(vault, requiredRepay);
-await vault.repay(requiredRepay, account);
 ```
 
 **Correct (repay with vault shares instead of underlying):**

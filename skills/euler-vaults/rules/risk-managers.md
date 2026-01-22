@@ -1,13 +1,13 @@
 ---
-title: Understanding Risk Curators and Vault Governance
+title: Understanding Risk Managers and Vault Governance
 impact: HIGH
 impactDescription: Essential for vault governance and risk management
-tags: risk, curator, governance, roles, security
+tags: risk, risk manager, curator, governance, roles, security
 ---
 
-## Understanding Risk Curators and Vault Governance
+## Understanding Risk Managers and Vault Governance
 
-Risk Curators (governors) are trusted entities responsible for ongoing vault configuration and risk management in Euler V2. They have full control over vault parameters through governance functions.
+Risk Managers (governors) are trusted entities responsible for ongoing vault configuration and risk management in Euler V2. They have full control over vault parameters through governance functions.
 
 **Incorrect (assuming anyone can configure vaults):**
 
@@ -16,7 +16,6 @@ Risk Curators (governors) are trusted entities responsible for ongoing vault con
 IEVault vault = IEVault(vaultAddress);
 vault.setLTV(collateral, 8000, 9000, 0);  // Will revert with E_Unauthorized!
 vault.setCaps(100, 50);                    // Will revert with E_Unauthorized!
-// Note: setCaps takes uint16 AmountCap encoded values, not raw asset amounts
 ```
 
 **Complete list of governance functions:**
@@ -76,7 +75,7 @@ vault.setCaps(
 // INTEREST RATE MODEL
 // ═══════════════════════════════════════════════════════════
 
-// Set new interest rate model contract
+// Set new interest rate model contract (must conform to the required interface)
 vault.setInterestRateModel(newIRMAddress);
 
 // Set interest fee (portion of interest that goes to fees)
@@ -108,6 +107,18 @@ vault.setHookConfig(
     hookTargetAddress,  // contract implementing IHookTarget
     hookedOps           // bitfield of operations to hook
 );
+
+// IMPORTANT: When hookTarget is address(0) and an operation bit is set in hookedOps,
+// that operation is DISABLED (will revert). This can be used for:
+// - Emergency pause of specific operations (deposit, borrow, withdraw, etc.)
+// - Permanently disabling certain features (e.g., no borrowing allowed)
+// - Rapid response to security incidents
+
+// Example: Emergency disable all deposits and borrows
+vault.setHookConfig(address(0), (1 << 0) | (1 << 5));  // OP_DEPOSIT | OP_BORROW
+
+// Example: Install a custom hook for deposits only
+vault.setHookConfig(myHookContract, 1 << 0);  // Only hook deposits
 
 // Set configuration flags (see Constants.sol)
 vault.setConfigFlags(configFlags);
@@ -142,7 +153,7 @@ address uoa = vault.unitOfAccount();
 address orc = vault.oracle();
 
 // LTV queries
-address[] memory collaterals = vault.LTVList();
+address[] memory collaterals = vault.LTVList(); // append only list (may contain vaults that are no longer accepted as collateral)
 uint16 borrowLTV = vault.LTVBorrow(collateral);
 uint16 liqLTV = vault.LTVLiquidation(collateral);
 (uint16 bLTV, uint16 lLTV, uint16 initLTV, uint48 targetTs, uint32 rampDur) = 
@@ -231,7 +242,7 @@ steward.setSupplyCap(vaultAddress, newSupplyCap);
 steward.setBorrowCap(vaultAddress, newBorrowCap);
 ```
 
-When integrating with Euler, prefer vaults verified in `GovernedPerspective` as they have been reviewed by Euler. However, risk assessment must be done by the Curator and assessed by individual users for their risk appetite.
+When integrating with Euler, vaults verified in `GovernedPerspective` have passed an initial configuration check by Euler. However, **Euler makes no ongoing guarantees** - risk managers can change vault parameters (LTVs, caps, oracles, IRMs, etc.) at any time after initial verification. Users must perform their own due diligence, monitor governance changes, and assess risk according to their own risk appetite. 
 
 References:
 - [Governance.sol Source](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Governance.sol)

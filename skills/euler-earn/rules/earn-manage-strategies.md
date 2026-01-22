@@ -106,7 +106,7 @@ earn.updateWithdrawQueue(newOrder);
 // To reduce exposure to a strategy:
 
 // Step 1: Reduce cap (instant for curator/owner)
-earn.submitCap(riskyStrategy, newLowerCap);
+earn.submitCap(IERC4626(riskyStrategy), newLowerCap);
 // No timelock for cap reduction!
 
 // Step 2: If over cap, reallocate excess
@@ -134,7 +134,7 @@ if (currentAllocation > newLowerCap) {
 // If a strategy is reverting/compromised:
 
 // Step 1: Set cap to 0
-earn.submitCap(brokenStrategy, 0);
+earn.submitCap(IERC4626(brokenStrategy), 0);
 
 // Step 2: Submit forced removal (starts timelock)
 // Note: Takes IERC4626, not address
@@ -188,8 +188,9 @@ async function optimizeAllocation(earn: Address) {
   
   // Reallocate to higher-yield strategies (respecting caps and liquidity)
   for (const highYield of byApy.slice(0, 3)) {
-    const cap = await earn.caps(highYield.address);
-    const headroom = cap - highYield.allocation;
+    // config() returns { balance, cap, enabled, removableAt }
+    const strategyConfig = await earn.read.config([highYield.address]);
+    const headroom = strategyConfig.cap - highYield.allocation;
     
     if (headroom > MIN_REALLOCATION) {
       // Find lower-yield strategy to pull from
@@ -198,9 +199,11 @@ async function optimizeAllocation(earn: Address) {
       
       if (moveAmount > MIN_REALLOCATION) {
         // Reallocate: reduce low yield, increase high yield
+        // type(uint256).max in TypeScript = 2n ** 256n - 1n
+        const MAX_UINT256 = 2n ** 256n - 1n;
         const allocations = [
           { id: lowYield.address, assets: lowYield.allocation - moveAmount },
-          { id: highYield.address, assets: type(uint256).max },
+          { id: highYield.address, assets: MAX_UINT256 },
         ];
         await earn.write.reallocate([allocations]);
       }

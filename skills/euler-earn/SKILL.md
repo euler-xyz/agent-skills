@@ -51,7 +51,6 @@ Reference these guidelines when:
 
 - `euler-vaults` - Core vault operations, EVC, risk management
 - `euler-irm-oracles` - Oracle adapters and interest rate models
-- `euler-swap` - AMM integration
 - `euler-advanced` - Hooks, flash loans, fee flow
 - `euler-data` - Lens contracts and data querying
 

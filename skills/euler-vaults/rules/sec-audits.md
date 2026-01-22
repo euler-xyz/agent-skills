@@ -7,48 +7,7 @@ tags: security, audits, bug-bounty, best-practices
 
 ## Security and Audits
 
-Euler V2 has undergone extensive security audits and maintains an active bug bounty program. Understanding security practices is critical for safe integration.
-
-**Security Audit Coverage:**
-
-Euler V2 has been audited by multiple top-tier security firms:
-
-### Ethereum Vault Connector (EVC)
-- Trail of Bits
-- OpenZeppelin
-- Spearbit
-- ChainSecurity
-- Omniscia
-- Hunter Security
-- Certora (formal verification)
-- yAudit (code competition)
-- Cantina (code competition)
-
-### Euler Vault Kit (EVK)
-- Trail of Bits
-- Spearbit
-- ChainSecurity
-- Hunter Security
-- yAudit
-- Cantina
-- Certora (formal verification)
-
-### Euler Price Oracle
-- OpenZeppelin
-- Spearbit
-- ChainSecurity
-- Hunter Security
-- yAudit
-
-### EulerEarn
-- Certora
-- Pashov Audit Group
-- Sigma Prime
-
-### EulerSwap
-- Spearbit
-- yAudit
-- Hunter Security
+Euler V2 has undergone extensive security audits and maintains an active bug bounty program. See [Euler Security](https://docs.euler.finance/security/audits) for full audit reports.
 
 **Incorrect (ignoring security considerations):**
 
@@ -64,121 +23,87 @@ vault.deposit(amount, receiver); // Could be malicious!
 import {GenericFactory} from "evk/GenericFactory/GenericFactory.sol";
 import {IPerspective} from "evk-periphery/Perspectives/implementation/interfaces/IPerspective.sol";
 
-// Option 1: Check if deployed by official factory
+// Check if deployed by official factory (confirms it's a real EVK vault)
 GenericFactory factory = GenericFactory(EVAULT_FACTORY);
 require(factory.isProxy(vaultAddress), "Not EVK vault");
 
-// Option 2: Check if verified by Euler governance
+// GovernedPerspective only confirms INITIAL configuration was checked
+// It does NOT guarantee ongoing safety - governors can change parameters anytime
 IPerspective governedPerspective = IPerspective(GOVERNED_PERSPECTIVE);
-require(governedPerspective.isVerified(vaultAddress), "Not Euler verified");
+bool wasInitiallyVerified = governedPerspective.isVerified(vaultAddress);
 
-// Option 3: Check specific perspective based on vault type
-IPerspective escrowPerspective = IPerspective(ESCROW_PERSPECTIVE);
-bool isEscrow = escrowPerspective.isVerified(vaultAddress);
-```
-
-**Correct (safe integration patterns):**
-
-```solidity
-// 1. Always use EVC for cross-vault operations
-// This ensures proper status checks and atomicity
-IEVC evc = IEVC(EVC_ADDRESS);
-
-evc.batch(items); // Atomic, with deferred checks
-
-// 2. Check account health before and after operations
-(uint256 collateralValue, uint256 liabilityValue) = 
-    IEVault(vault).accountLiquidity(account, false);
-
-// 3. Use approved oracles only
-address oracle = IEVault(vault).oracle();
-require(isApprovedOracle(oracle), "Unknown oracle");
-
-// 4. Verify IRM is from known factory
-address irm = IEVault(vault).interestRateModel();
-require(irmRegistry.isRegistered(irm), "Unknown IRM");
-```
-
-**Bug Bounty Program:**
-
-Euler maintains bug bounty programs through:
-- Immunefi
-- Direct security contact: security@euler.xyz
-
-```markdown
-Severity Levels:
-- Critical: Up to $2,000,000 USD
-- High: Up to $100,000 USD
-- Medium: Up to $25,000 USD
-- Low: Up to $5,000 USD
+// IMPORTANT: Users should only interact with vaults they trust
+// - Verify the governor address and who controls it
+// - Monitor for parameter changes (LTV, caps, oracle, IRM)
+// - Assess the risk manager's reputation and track record
 ```
 
 **Security Best Practices:**
 
 ```typescript
-// 1. Always validate external vault addresses
-const isValidVault = async (vault: Address): Promise<boolean> => {
-  // Check factory deployment
-  const isProxy = await evaultFactory.read.isProxy([vault]);
-  if (!isProxy) return false;
-  
-  // Check perspective verification
-  const isVerified = await governedPerspective.read.isVerified([vault]);
-  return isVerified;
+// 1. Validate vault is from official factory
+const isEVKVault = async (vault: Address): Promise<boolean> => {
+  return await evaultFactory.read.isProxy([vault]);
 };
 
-// 2. Monitor for governance changes
-const monitorVault = async (vault: Address) => {
-  const events = await publicClient.getLogs({
-    address: vault,
-    event: parseAbiItem('event GovernorAdminSet(address indexed newGovernorAdmin)'),
-    fromBlock: 'earliest'
-  });
-  // Alert on unexpected governor changes
-};
-
-// 3. Check for hook configuration
-const checkHooks = async (vault: Address) => {
-  const [hookTarget, hookedOps] = await evault.read.hookConfig();
+// 2. Check who controls the vault (critical!)
+const checkGovernance = async (vault: Address) => {
+  const governor = await evault.read.governorAdmin();
   
-  if (hookTarget !== zeroAddress) {
-    // Vault has custom hooks - verify hook contract
-    console.warn('Vault has hooks configured:', hookTarget);
+  if (governor === zeroAddress) {
+    console.log('Ungoverned vault - parameters are immutable');
+  } else {
+    // IMPORTANT: Verify you trust this governor!
+    // Could be EOA, multisig, DAO, or limited steward contract
+    console.log('Governor:', governor);
+    // Research: Who controls this address? What's their track record?
   }
 };
 
-// 4. Validate oracle freshness
-const checkOracle = async (vault: Address) => {
+// 3. Check current configuration matches your expectations
+const verifyConfig = async (vault: Address) => {
   const oracle = await evault.read.oracle();
-  const price = await eulerRouter.read.getQuote([
-    1n * 10n ** 18n,  // 1 unit
-    asset,
-    unitOfAccount
-  ]);
+  const irm = await evault.read.interestRateModel();
+  const [hookTarget, hookedOps] = await evault.read.hookConfig();
+  const [supplyCap, borrowCap] = await evault.read.caps();
   
-  // Verify price is reasonable
-  if (price === 0n) {
-    throw new Error('Oracle returned zero price');
-  }
+  // Verify these match what you expect for this vault
+  console.log('Oracle:', oracle);
+  console.log('IRM:', irm);
+  console.log('Hooks:', hookTarget, hookedOps);
 };
+```
+
+**Evaluating Collateral Quality (Critical for Lenders):**
+
+When depositing into a vault, you're exposed to the collateral assets that borrowers can use. Assess:
+- **What collaterals are accepted?** Check `LTVList()` for all configured collaterals
+- **Are these assets trustworthy?** Consider token contract risk, liquidity, price stability
+- **Are the LTVs appropriate?** Higher LTV = more risk for lenders if collateral drops
+- **Is the oracle reliable?** Bad price feeds can lead to undercollateralized loans
+
+```typescript
+// Check what collaterals a vault accepts and their LTVs
+const collaterals = await vault.read.LTVList();
+for (const collateral of collaterals) {
+  const [borrowLTV, liqLTV] = await vault.read.LTVFull([collateral]);
+  const collateralAsset = await IEVault(collateral).asset();
+  console.log(`Collateral: ${collateralAsset}, Borrow LTV: ${borrowLTV/100}%`);
+  // Research: Is this a safe, liquid asset? Do you trust it?
+}
 ```
 
 **Key Security Considerations:**
 
 | Area | Risk | Mitigation |
 |------|------|------------|
-| Vault authenticity | Fake vault contracts | Verify via factory/perspective |
-| Oracle manipulation | Price feed attacks | Use Euler-verified oracles |
-| Governance changes | Malicious parameter updates | Monitor events, use timelocks |
-| Hook exploitation | Custom logic vulnerabilities | Audit hook contracts |
-| Flash loan attacks | Price manipulation | Deferred liquidity checks |
-| Reentrancy | State corruption | Built-in reentrancy guards |
+| Collateral quality | Bad debt from risky assets | Review accepted collaterals and their LTVs |
+| Vault authenticity | Fake vault contracts | Verify via factory (`isProxy`) |
+| Governor trust | Malicious parameter changes | Only use vaults with trusted governors |
+| Oracle manipulation | Price feed attacks | Verify oracle source and configuration |
+| Governance changes | Unexpected LTV/cap/IRM updates | Monitor events, verify governor identity |
+| Hook exploitation | Custom logic vulnerabilities | Check hook configuration before use |
 
-**Formal Verification:**
-
-Euler uses Certora for formal verification of critical invariants:
-- EVC: Account/operator relationships, collateral/controller consistency
-- EVault: Share/asset accounting, liquidation mechanics
-- EulerEarn: Strategy allocation, share calculations
+**Important:** Euler's GovernedPerspective only verifies initial configuration. Risk managers can change vault parameters at any time. Always verify you trust the vault's governor AND the accepted collateral assets before depositing funds.
 
 Reference: [Euler Security](https://docs.euler.finance/security/audits), [EVC Audits](https://github.com/euler-xyz/ethereum-vault-connector/tree/master/audits), [EVK Audits](https://github.com/euler-xyz/euler-vault-kit/tree/master/audits)

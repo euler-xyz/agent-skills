@@ -20,12 +20,6 @@ Oracle and Interest Rate Model guide. Covers deploying oracle adapters (Chainlin
 
 **Use when:** Deploying oracle adapters, configuring price feeds, understanding IRM types (Linear Kink, Adaptive Curve).
 
-### euler-swap
-
-EulerSwap AMM integration guide. Covers pool deployment, quotes, liquidity limits, and swap execution.
-
-**Use when:** Deploying EulerSwap pools, getting swap quotes, executing swaps, managing LP positions.
-
 ### euler-earn
 
 EulerEarn yield aggregation guide. Covers vault creation, strategy management, roles, and PublicAllocator.
@@ -49,7 +43,7 @@ Developer tools and data access guide. Covers Lens contracts, subgraphs, contrac
 Install all skills:
 
 ```bash
-npx add-skill euler-xyz/agent-skills --skill euler-vaults --skill euler-irm-oracles --skill euler-swap --skill euler-earn --skill euler-advanced --skill euler-data
+npx add-skill euler-xyz/agent-skills --skill euler-vaults --skill euler-irm-oracles --skill euler-earn --skill euler-advanced --skill euler-data
 ```
 
 Install specific skill(s):
@@ -74,7 +68,6 @@ npx add-skill euler-xyz/agent-skills --list
 **Skill guide:**
 - `euler-vaults` - Core operations (start here)
 - `euler-irm-oracles` - Oracle adapters and Interest Rate Models
-- `euler-swap` - EulerSwap AMM integration
 - `euler-earn` - Yield aggregation vaults
 - `euler-advanced` - Hooks, flash loans, fee flow, rewards
 - `euler-data` - Lens contracts, subgraphs, developer tools
@@ -153,7 +146,6 @@ pnpm build-agents -- --skill=euler-vaults
 - [Ethereum Vault Connector](https://github.com/euler-xyz/ethereum-vault-connector)
 - [Euler Price Oracle](https://github.com/euler-xyz/euler-price-oracle)
 - [EulerEarn](https://github.com/euler-xyz/euler-earn)
-- [EulerSwap](https://github.com/euler-xyz/euler-swap)
 
 ## License
 

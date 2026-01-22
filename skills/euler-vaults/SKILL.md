@@ -15,7 +15,6 @@ Core guide for interacting with Euler Finance V2 protocol. Contains rules across
 
 For specialized topics, use these companion skills:
 - **euler-irm-oracles** - Oracle adapters, EulerRouter, price resolution, Interest Rate Models
-- **euler-swap** - EulerSwap AMM pools, quotes, liquidity
 - **euler-earn** - EulerEarn yield aggregation, strategies
 - **euler-advanced** - Hooks, flash loans, fee flow, rewards
 - **euler-data** - Lens contracts, subgraphs, contract interfaces, developer tools
@@ -23,7 +22,7 @@ For specialized topics, use these companion skills:
 ## When to Apply
 
 Reference these guidelines when:
-- Depositing, borrowing, or managing positions on Euler vaults
+- Depositing, borrowing, or managing positions on Euler vaults (EVK)
 - Batching operations via the Ethereum Vault Connector (EVC)
 - Monitoring health factors and liquidation risk
 - Understanding Euler architecture (vault types, market design)
@@ -35,7 +34,7 @@ Reference these guidelines when:
 |---|----------|--------|--------|---------------|
 | 1 | Vault Operations | CRITICAL | `vault-` | Get APY, deposit, borrow, create market |
 | 2 | EVC Operations | CRITICAL | `evc-` | Batch calls, sub-accounts, operators |
-| 3 | Risk Management | HIGH | `risk-` | Check health, liquidation, curators |
+| 3 | Risk Management | HIGH | `risk-` | Check health, liquidation, risk managers, curators |
 | 4 | Architecture | HIGH | `arch-` | Market design, vault types |
 | 5 | Security | CRITICAL | `sec-` | Audits, best practices |
 
@@ -59,9 +58,8 @@ Reference these guidelines when:
 ### 3. Risk Management (HIGH)
 
 - `risk-check-health` - How to check account health factor
-- `risk-liquidation` - How liquidation works on Euler
-- `risk-monitor-position` - How to monitor position health
-- `risk-curators` - Understanding risk curator roles
+- `risk-liquidation` - How liquidations work on Euler
+- `risk-managers` - Understanding risk manager roles
 
 ### 4. Architecture (HIGH)
 
@@ -78,7 +76,7 @@ Reference these guidelines when:
 The EVC is the foundational layer mediating between vaults. It provides:
 - **Batching**: Execute multiple operations atomically
 - **Sub-accounts**: 256 isolated positions per address
-- **Operators**: Delegate control to automated strategies
+- **Operators**: Delegate control over your accounts to other addresses
 - **Deferred checks**: Temporarily violate constraints within a batch
 
 ### Euler Vault Kit (EVK)

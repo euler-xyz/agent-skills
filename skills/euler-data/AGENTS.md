@@ -21,9 +21,8 @@ Developer tools and data access guide for Euler Finance V2. Covers Lens contract
 
 1. [Developer Tools](#1-developer-tools) — **MEDIUM**
    - 1.1 [Contract Addresses and ABIs](#11-contract-addresses-and-abis)
-   - 1.2 [Creator Tools and Deployment Resources](#12-creator-tools-and-deployment-resources)
-   - 1.3 [Data Querying with Subgraphs](#13-data-querying-with-subgraphs)
-   - 1.4 [Lens Contracts for Data Queries](#14-lens-contracts-for-data-queries)
+   - 1.2 [Data Querying with Subgraphs](#12-data-querying-with-subgraphs)
+   - 1.3 [Lens Contracts for Data Queries](#13-lens-contracts-for-data-queries)
 
 ---
 
@@ -31,13 +30,13 @@ Developer tools and data access guide for Euler Finance V2. Covers Lens contract
 
 **Impact: MEDIUM**
 
-Tools and resources for developers including Lens contracts for querying vault data, subgraphs for historical data, contract addresses and ABIs, and no-code deployment via Euler Creator. Essential for efficient Euler development and integration.
+Tools and resources for developers including Lens contracts for querying vault and account data, subgraph for tracking active accounts, and contract addresses and ABIs. Essential for efficient Euler development and integration.
 
 ### 1.1 Contract Addresses and ABIs
 
 **Impact: MEDIUM (Essential reference for Euler contract integration)**
 
-The `euler-interfaces` package provides verified contract addresses and ABIs for all supported chains. Always use this package rather than hardcoding addresses.
+The `euler-interfaces` repository provides verified contract addresses and ABIs for all supported chains. Always use this package rather than hardcoding addresses.
 
 **Incorrect: hardcoding addresses**
 
@@ -113,34 +112,6 @@ const { core: arbCore } = await getEulerAddresses(42161);     // Arbitrum
     └── ...
 ```
 
-**Supported Chains:**
-
-| Chain | Chain ID | Package Path |
-
-|-------|----------|--------------|
-
-| Ethereum | 1 | `addresses/1/` |
-
-| Arbitrum | 42161 | `addresses/42161/` |
-
-| Base | 8453 | `addresses/8453/` |
-
-| Optimism | 10 | `addresses/10/` |
-
-| Polygon | 137 | `addresses/137/` |
-
-| Avalanche | 43114 | `addresses/43114/` |
-
-| BSC | 56 | `addresses/56/` |
-
-| Linea | 59144 | `addresses/59144/` |
-
-| Mantle | 5000 | `addresses/5000/` |
-
-| Berachain | 80094 | `addresses/80094/` |
-
-| Sonic | 146 | `addresses/146/` |
-
 **Correct: using with viem**
 
 ```typescript
@@ -166,38 +137,6 @@ const evc = getContract({
 const collaterals = await evc.read.getCollaterals([accountAddress]);
 ```
 
-**Available ABIs:**
-
-```typescript
-// Core contracts
-import EVault from '@eulerxyz/euler-interfaces/abis/EVault.json';
-import EthereumVaultConnector from '@eulerxyz/euler-interfaces/abis/EthereumVaultConnector.json';
-import GenericFactory from '@eulerxyz/euler-interfaces/abis/GenericFactory.json';
-
-// Oracle
-import EulerRouter from '@eulerxyz/euler-interfaces/abis/EulerRouter.json';
-
-// EulerEarn
-import EulerEarn from '@eulerxyz/euler-interfaces/abis/EulerEarn.json';
-import EulerEarnFactory from '@eulerxyz/euler-interfaces/abis/EulerEarnFactory.json';
-import PublicAllocator from '@eulerxyz/euler-interfaces/abis/PublicAllocator.json';
-
-// EulerSwap
-import EulerSwap from '@eulerxyz/euler-interfaces/abis/EulerSwap.json';
-import EulerSwapFactory from '@eulerxyz/euler-interfaces/abis/EulerSwapFactory.json';
-
-// Lens
-import VaultLens from '@eulerxyz/euler-interfaces/abis/VaultLens.json';
-import AccountLens from '@eulerxyz/euler-interfaces/abis/AccountLens.json';
-import OracleLens from '@eulerxyz/euler-interfaces/abis/OracleLens.json';
-import IRMLens from '@eulerxyz/euler-interfaces/abis/IRMLens.json';
-
-// Periphery
-import FeeFlowController from '@eulerxyz/euler-interfaces/abis/FeeFlowController.json';
-import RewardToken from '@eulerxyz/euler-interfaces/abis/RewardToken.json';
-import TrackingRewardStreams from '@eulerxyz/euler-interfaces/abis/TrackingRewardStreams.json';
-```
-
 **Correct: Solidity remapping**
 
 ```solidity
@@ -213,532 +152,249 @@ Always refer to the euler-interfaces package for the most up-to-date addresses. 
 
 Reference: [https://github.com/euler-xyz/euler-interfaces](https://github.com/euler-xyz/euler-interfaces)
 
-### 1.2 Creator Tools and Deployment Resources
+### 1.2 Data Querying with Subgraphs
 
-**Impact: MEDIUM (Tools for deploying and managing Euler vaults)**
+**Impact: MEDIUM (Track active accounts and vault factories)**
 
-Euler provides multiple tools for creating and managing vaults, from no-code platforms to scripting libraries.
+Euler provides a minimal subgraph deployed via Goldsky for tracking active accounts and vault factory origins. The subgraph is intentionally limited in scope - **use Lens contracts for real-time vault data, positions, and configuration**.
 
-**Available Creator Tools:**
-
-```solidity
-// From euler-vault-scripts repository
-
-// Deploy a new vault cluster
-forge script script/DeployVaultCluster.s.sol \
-    --rpc-url $RPC_URL \
-    --broadcast
-
-// Configure LTV relationships
-forge script script/ConfigureLTV.s.sol \
-    --rpc-url $RPC_URL \
-    --broadcast
-
-// Emergency governance procedures
-forge script script/EmergencyPause.s.sol \
-    --rpc-url $RPC_URL \
-    --broadcast
-```
-
-A bare-bones no-code platform for creating and managing lending vaults on Euler.
-
-Tool for deploying and managing price oracles for Euler markets.
-
-Collection of scripts for deploying, configuring, and managing vault clusters.
-
-**Correct: deploying vault via script**
-
-```solidity
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
-
-import {Script} from "forge-std/Script.sol";
-import {GenericFactory} from "evk/GenericFactory/GenericFactory.sol";
-import {IEVault} from "evk/EVault/IEVault.sol";
-
-contract DeployVault is Script {
-    // Mainnet addresses
-    address constant EVAULT_FACTORY = 0x29a56a1b8214D9Cf7c5561811750D5cBDb45CC8e;
-    address constant KINK_IRM_FACTORY = 0xcAe0A39B45Ee9C3213f64392FA6DF30CE034C9F9;
-    address constant ORACLE_ROUTER_FACTORY = 0x70B3f6F61b7Bf237DF04589DdAA842121072326A;
-    
-    function run() external {
-        uint256 deployerKey = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(deployerKey);
-        
-        // 1. Deploy IRM
-        address irm = IKinkIRMFactory(KINK_IRM_FACTORY).deploy(
-            0,           // baseRate
-            1.585e25,    // slope1 (~5% APY at kink)
-            13.16e27,    // slope2 (~300% at 100%)
-            0.9e9        // kink (90%)
-        );
-        
-        // 2. Deploy oracle router
-        address router = IEulerRouterFactory(ORACLE_ROUTER_FACTORY).deploy(
-            msg.sender   // governor
-        );
-        
-        // 3. Configure oracle adapters
-        IEulerRouter(router).govSetConfig(
-            asset,
-            unitOfAccount,
-            oracleAdapter
-        );
-        
-        // 4. Deploy vault
-        bytes memory trailingData = abi.encodePacked(
-            asset,
-            router,
-            unitOfAccount
-        );
-        address vault = GenericFactory(EVAULT_FACTORY).createProxy(
-            address(0),  // no salt
-            true,        // upgradeable
-            trailingData
-        );
-        
-        // 5. Configure vault
-        IEVault(vault).setInterestRateModel(irm);
-        IEVault(vault).setHookConfig(address(0), 0);
-        // Caps use AmountCap uint16 encoding (0 = unlimited)
-        // See AmountCap.sol for encoding formula
-        IEVault(vault).setCaps(0, 0); // 0 = no cap
-        IEVault(vault).setInterestFee(0.1e4); // 10%
-        
-        // 6. Configure LTV for collaterals
-        IEVault(vault).setLTV(
-            collateralVault,
-            0.75e4,     // 75% borrow LTV
-            0.85e4,     // 85% liquidation LTV
-            0           // no ramp
-        );
-        
-        vm.stopBroadcast();
-        
-        console.log("Vault deployed:", vault);
-    }
-}
-```
-
-**Correct: using EdgeFactory for ungoverned vaults**
-
-```typescript
-// euler-interfaces provides contract addresses and ABIs
-import addresses from '@eulerxyz/euler-interfaces/addresses/1/CoreAddresses.json';
-import periphery from '@eulerxyz/euler-interfaces/addresses/1/PeripheryAddresses.json';
-import evaultABI from '@eulerxyz/euler-interfaces/abis/EVault.json';
-
-// Core addresses
-const evc = addresses.evc;
-const evaultFactory = addresses.eVaultFactory;
-const eulerEarnFactory = addresses.eulerEarnFactory;
-
-// Periphery addresses
-const kinkIrmFactory = periphery.kinkIRMFactory;
-const oracleRouterFactory = periphery.oracleRouterFactory;
-const governedPerspective = periphery.governedPerspective;
-
-// Create contract instance
-const vault = getContract({
-  address: vaultAddress,
-  abi: evaultABI,
-  client: walletClient,
-});
-```
-
-**TypeScript: Using euler-interfaces package:**
-
-**Development Workflow:**
-
-```bash
-# 1. Clone vault scripts repo
-git clone https://github.com/euler-xyz/euler-vault-scripts
-
-# 2. Install dependencies
-cd euler-vault-scripts
-./install.sh
-
-# 3. Configure environment
-cp .env.example .env
-# Edit .env with RPC_URL and PRIVATE_KEY
-
-# 4. Deploy vault cluster
-forge script script/DeployVaultCluster.s.sol \
-    --rpc-url $RPC_URL \
-    --broadcast \
-    --verify
-
-# 5. Verify on Etherscan
-forge verify-contract $VAULT_ADDRESS EVault \
-    --chain mainnet
-```
-
-Reference: [https://github.com/euler-xyz/euler-vault-scripts](https://github.com/euler-xyz/euler-vault-scripts), [https://create.euler.finance](https://create.euler.finance)
-
-### 1.3 Data Querying with Subgraphs
-
-**Impact: MEDIUM (Efficiently querying historical and aggregated data)**
-
-Euler provides subgraphs deployed via Goldsky for efficient querying of historical data, vault statistics, and account positions across all supported chains.
-
-**Incorrect: querying everything on-chain**
-
-```typescript
-// WRONG: Fetching all vault positions on-chain is expensive and slow
-const allVaults = await factory.read.getAllProxies();
-for (const vault of allVaults) {
-  const info = await vault.read.getVaultInfo(); // Many RPC calls!
-}
-```
-
-**Correct: using Subgraph for aggregated data**
-
-```typescript
-// Subgraphs are deployed via Goldsky
-// Check docs.euler.finance for current endpoint URLs
-
-// Supported networks (as of 2025):
-// mainnet, arbitrum, base, swell, sonic, ink, unichain, avalanche,
-// berachain, bob, bsc, worldchain, hyperevm, optimism, gnosis,
-// tac, linea, plasma, mantle, monad
-```
-
-**Correct: querying vault data**
+**Subgraph Schema:**
 
 ```graphql
-# Get all vaults with their configuration
-query GetVaults {
-  eulerVaults(first: 100, orderBy: blockTimestamp, orderDirection: desc) {
+# Vault entity - tracks which factory created each vault
+type Vault @entity(immutable: true) {
+  id: Bytes!      # vault address
+  factory: Bytes! # factory that created this vault
+}
+
+# Active account tracking - indexed by address prefix (first 19 bytes)
+# Groups main account with all 256 sub-accounts under the same prefix
+type TrackingActiveAccount @entity {
+  id: Bytes!            # addressPrefix (first 19 bytes)
+  addressPrefix: Bytes! # first 19 bytes shared by main address and sub-accounts
+  deposits: [Bytes!]!   # list of account+vault IDs with deposits
+  borrows: [Bytes!]!    # list of account+vault IDs with borrows
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# Per-account vault balance tracking
+type TrackingVaultBalance @entity {
+  id: Bytes!            # account + vault (concatenated)
+  vault: Bytes!
+  addressPrefix: Bytes! # links to TrackingActiveAccount
+  account: Bytes!
+  balance: BigInt!      # vault shares
+  debt: BigInt!         # borrowed amount
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+```
+
+**When to Use Subgraph vs Lens:**
+
+| Use Case | Tool |
+
+|----------|------|
+
+| Find all active accounts | Subgraph: `TrackingActiveAccount` |
+
+| Check which factory created a vault to know the vault type | Subgraph: `Vault.factory` |
+
+| Get vault configuration (caps, LTVs, oracle) | Lens: `VaultLens.getVaultInfoFull()` |
+
+| Get account position details | Lens: `AccountLens.getAccountInfo()` |
+
+| Get real-time balances and health | Lens: `AccountLens.getAccountLiquidityInfo()` |
+
+| Get interest rates and APYs | Lens: `UtilsLens.getAPYs()` |
+
+**Correct: querying vault factory origin**
+
+```graphql
+# Find which factory deployed a vault
+query GetVaultFactory($vault: Bytes!) {
+  vault(id: $vault) {
     id
-    evault
-    name
-    symbol
-    asset
-    decimals
-    supplyCap
-    borrowCap
-    interestFee
-    oracle
-    unitOfAccount
-    governonAdmin
-    feeReceiver
-    creator
-    interestRateModel
-    collaterals
-    perspectives
+    factory
+  }
+}
+
+# Get all vaults from a specific factory
+query GetVaultsFromFactory($factory: Bytes!) {
+  vaults(where: { factory: $factory }) {
+    id
+    factory
+  }
+}
+```
+
+**Correct: querying active accounts by address prefix**
+
+```graphql
+# Get all active accounts (accounts with deposits or borrows)
+# Note: Indexed by address prefix (first 19 bytes)
+# This groups main account + all 256 sub-accounts together
+query GetActiveAccounts($first: Int = 100) {
+  trackingActiveAccounts(first: $first, where: { deposits_not: [], borrows_not: [] }) {
+    id
+    addressPrefix
+    deposits
+    borrows
+    blockTimestamp
+  }
+}
+
+# Find active accounts by address prefix
+query GetAccountByPrefix($prefix: Bytes!) {
+  trackingActiveAccount(id: $prefix) {
+    addressPrefix
+    deposits
+    borrows
     blockTimestamp
   }
 }
 ```
 
-**Correct: querying vault status/state**
-
-```graphql
-# Get vault status with TVL and rates
-query GetVaultStatus($vault: Bytes!) {
-  vaultStatuses(
-    where: { vault: $vault }
-    orderBy: timestamp
-    orderDirection: desc
-    first: 1
-  ) {
-    id
-    vault
-    totalShares
-    totalBorrows
-    cash
-    accumulatedFees
-    interestAccumulator
-    interestRate
-    supplyApy
-    borrowApy
-    timestamp
-    blockTimestamp
-  }
-}
-```
-
-**Correct: querying account balances via TrackingVaultBalance**
-
-```graphql
-# Get all positions for an account
-# Note: Account entity only has id, subAccount, owner
-# Use TrackingVaultBalance for position data
-query GetAccountPositions($mainAddress: Bytes!) {
-  trackingVaultBalances(where: { mainAddress: $mainAddress }) {
-    id
-    vault
-    mainAddress
-    account
-    balance
-    debt
-    isControllerEnabled
-    blockTimestamp
-  }
-}
-```
-
-**Correct: querying interest rate history**
+**Correct: querying account vault balances - amounts are updated at the time of last interaction**
 
 ```typescript
 import { request, gql } from 'graphql-request';
 
 // Get current endpoint from docs.euler.finance
-const SUBGRAPH_URL = 'https://api.goldsky.com/api/public/.../euler-mainnet/gn';
+// Deployed via Goldsky
+const SUBGRAPH_URL = 'https://api.goldsky.com/...';
 
-// Query vault information
-const getVaultInfo = async (vaultAddress: string) => {
+// Get address prefix (first 19 bytes)
+function getAddressPrefix(account: string): string {
+  return ('0x' + account.slice(2, 40)).toLowerCase();
+}
+
+// Check which factory created a vault
+async function getVaultFactory(vaultAddress: string): Promise<string | null> {
   const query = gql`
-    query GetVault($id: Bytes!) {
-      eulerVault(id: $id) {
-        id
-        evault
-        name
-        symbol
-        asset
-        decimals
-        supplyCap
-        borrowCap
-        interestFee
-        oracle
-        unitOfAccount
-        collaterals
-        governonAdmin
-        feeReceiver
-        creator
-        blockTimestamp
+    query GetVaultFactory($id: Bytes!) {
+      vault(id: $id) {
+        factory
       }
     }
   `;
   
-  return request(SUBGRAPH_URL, query, { id: vaultAddress.toLowerCase() });
-};
-
-// Query vault current state
-const getVaultStatus = async (vaultAddress: string) => {
-  const query = gql`
-    query GetVaultStatus($vault: Bytes!) {
-      vaultStatuses(
-        where: { vault: $vault }
-        orderBy: timestamp
-        orderDirection: desc
-        first: 1
-      ) {
-        totalShares
-        totalBorrows
-        cash
-        interestRate
-        supplyApy
-        borrowApy
-        timestamp
-      }
-    }
-  `;
+  const result = await request(SUBGRAPH_URL, query, { 
+    id: vaultAddress.toLowerCase() 
+  });
   
-  return request(SUBGRAPH_URL, query, { vault: vaultAddress.toLowerCase() });
-};
+  return result.vault?.factory ?? null;
+}
 
-// Query user positions
-const getUserPositions = async (account: string) => {
+// Get all active positions for an account (including sub-accounts)
+async function getAccountPositions(account: string) {
+  const prefix = getAddressPrefix(account);
+  
   const query = gql`
-    query GetUserPositions($mainAddress: Bytes!) {
-      trackingVaultBalances(
-        where: { mainAddress: $mainAddress, balance_gt: "0" }
-      ) {
+    query GetPositions($prefix: Bytes!) {
+      trackingVaultBalances(where: { addressPrefix: $prefix }) {
         vault
+        account
         balance
         debt
-        isControllerEnabled
         blockTimestamp
       }
     }
   `;
   
-  return request(SUBGRAPH_URL, query, { mainAddress: account.toLowerCase() });
-};
+  return request(SUBGRAPH_URL, query, { prefix });
+}
 
-// Query historical APY
-const getHistoricalAPY = async (vault: string, days: number = 30) => {
-  const since = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60);
+// Check if an account has any active positions
+async function isAccountActive(account: string): Promise<boolean> {
+  const prefix = getAddressPrefix(account);
   
   const query = gql`
-    query GetAPYHistory($vault: Bytes!, $since: BigInt!) {
-      vaultStatuses(
-        where: { vault: $vault, timestamp_gte: $since }
-        orderBy: timestamp
-        first: 1000
-      ) {
-        timestamp
-        interestRate
-        supplyApy
-        borrowApy
-        totalShares
-        totalBorrows
+    query CheckActive($prefix: Bytes!) {
+      trackingActiveAccount(id: $prefix) {
+        deposits
+        borrows
       }
     }
   `;
   
-  return request(SUBGRAPH_URL, query, { 
-    vault: vault.toLowerCase(), 
-    since: since.toString() 
-  });
-};
+  const result = await request(SUBGRAPH_URL, query, { prefix });
+  const active = result.trackingActiveAccount;
+  
+  return active && (active.deposits.length > 0 || active.borrows.length > 0);
+}
 ```
+
+**TypeScript: Computing address prefix:**
 
 **TypeScript: Complete subgraph integration:**
 
-**Correct: querying liquidation events**
-
-```graphql
-# Get recent liquidations
-query GetLiquidations($since: BigInt!) {
-  liquidates(
-    where: { blockTimestamp_gte: $since }
-    orderBy: blockTimestamp
-    orderDirection: desc
-    first: 100
-  ) {
-    id
-    blockTimestamp
-    liquidator
-    violator
-    vault
-    collateral
-    repayAssets
-    yieldBalance
-    transactionHash
-  }
-}
-```
-
-**Correct: querying deposits and withdrawals**
-
-```graphql
-# Get deposit events
-query GetDeposits($vault: Bytes!, $since: BigInt!) {
-  deposits(
-    where: { vault: $vault, blockTimestamp_gte: $since }
-    orderBy: blockTimestamp
-    orderDirection: desc
-  ) {
-    id
-    sender
-    owner
-    assets
-    shares
-    vault
-    blockTimestamp
-    transactionHash
-  }
-}
-
-# Get withdrawal events
-query GetWithdrawals($vault: Bytes!, $since: BigInt!) {
-  withdraws(
-    where: { vault: $vault, blockTimestamp_gte: $since }
-    orderBy: blockTimestamp
-    orderDirection: desc
-  ) {
-    id
-    sender
-    receiver
-    owner
-    assets
-    shares
-    vault
-    blockTimestamp
-    transactionHash
-  }
-}
-```
-
-**Correct: querying Euler Earn vaults**
-
-```graphql
-# Get Euler Earn aggregator vaults
-query GetEulerEarnVaults {
-  eulerEarnVaults(first: 100) {
-    id
-    name
-    symbol
-    asset
-    owner
-    curator
-    guardian
-    feeReceiver
-    performanceFee
-    timelock
-    totalShares
-    totalAssets
-    totalAllocated
-    supplyQueue
-    blockTimestamp
-  }
-}
-```
-
-**Combining Subgraph with On-Chain Data:**
+**Combining Subgraph with Lens Contracts:**
 
 ```typescript
-// Best practice: Use subgraph for discovery, on-chain for current state
+import { getContract } from 'viem';
+import { request, gql } from 'graphql-request';
+import lens from '@eulerxyz/euler-interfaces/addresses/1/LensAddresses.json';
+import accountLensABI from '@eulerxyz/euler-interfaces/abis/AccountLens.json';
 
-// 1. Use subgraph to find relevant vaults
-const vaultsQuery = gql`
+// Best practice: 
+// 1. Use subgraph to discover active accounts
+// 2. Use Lens contracts for detailed, real-time position data
+
+// Step 1: Find active accounts from subgraph
+const activeAccountsQuery = gql`
   query {
-    eulerVaults(first: 20, orderBy: blockTimestamp, orderDirection: desc) {
-      evault
-      name
-      symbol
-      asset
+    trackingActiveAccounts(first: 100, where: { borrows_not: [] }) {
+      addressPrefix
+      borrows
     }
   }
 `;
-const topVaults = await request(SUBGRAPH_URL, vaultsQuery);
+const activeAccounts = await request(SUBGRAPH_URL, activeAccountsQuery);
 
-// 2. Use on-chain for real-time data
-const vaultLens = getContract({
-  address: VAULT_LENS,
-  abi: vaultLensABI,
-  client
+// Step 2: Use AccountLens for detailed position data
+const accountLens = getContract({
+  address: lens.accountLens as Address,
+  abi: accountLensABI,
+  client: publicClient
 });
 
-for (const vault of topVaults.eulerVaults) {
-  // Get current state on-chain (more accurate)
-  const info = await vaultLens.read.getVaultInfoDynamic([vault.evault]);
-  
-  // Combine with historical data from subgraph
-  const history = await getHistoricalAPY(vault.evault, 7);
-  
-  console.log(`${vault.symbol}: Current APY ${info.supplyAPY}`);
+for (const tracking of activeAccounts.trackingActiveAccounts) {
+  // Get detailed liquidity info for each borrowing position
+  for (const positionId of tracking.borrows) {
+    // positionId is account + vault concatenated
+    const account = '0x' + positionId.slice(2, 42);
+    const vault = '0x' + positionId.slice(42);
+    
+    // Real-time health check via Lens
+    const liquidityInfo = await accountLens.read.getAccountLiquidityInfo([
+      account,
+      vault
+    ]);
+    
+    console.log(`Account ${account} in vault ${vault}:`);
+    console.log(`  Health: ${liquidityInfo.collateralValueLiquidation / liquidityInfo.liabilityValueLiquidation}`);
+    console.log(`  TTL: ${liquidityInfo.timeToLiquidation}`);
+  }
 }
 ```
 
-**Available Subgraph Entities:**
+**Important Notes:**
 
-| Entity | Key Fields | Use Case |
+1. **Minimal by design**: The subgraph only tracks account activity and vault factories. Use Lens contracts for vault configuration, LTVs, caps, oracles, IRM info, etc.
 
-|--------|------------|----------|
+2. **Address prefix indexing**: Accounts are indexed by their first 19 bytes. This means a main account and all its 256 EVC sub-accounts share the same `TrackingActiveAccount` entity.
 
-| EulerVault | evault, asset, caps, oracle | Vault discovery & config |
+3. **Balance tracking**: `TrackingVaultBalance` stores raw balances and debt at the time of the last interactions. For accurate health factor and liquidation status, use `AccountLens.getAccountLiquidityInfo()`.
 
-| VaultStatus | totalShares, totalBorrows, APYs | TVL, rates, utilization |
-
-| TrackingVaultBalance | balance, debt, vault | User positions |
-
-| Liquidate | violator, repayAssets, collateral | Liquidation events |
-
-| Deposit/Withdraw | assets, shares, sender | Transaction history |
-
-| Borrow/Repay | assets, account | Borrow activity |
-
-| EulerEarnVault | totalAssets, strategies | Earn aggregators |
-
-| EulerSwapPool | reserves, fee, assets | Swap pool data |
+4. **Factory verification**: Use `Vault.factory` to verify a vault was deployed from an official Euler factory.
 
 Reference: [https://github.com/euler-xyz/euler-subgraph](https://github.com/euler-xyz/euler-subgraph)
 
-### 1.4 Lens Contracts for Data Queries
+### 1.3 Lens Contracts for Data Queries
 
 **Impact: MEDIUM (Essential for reading comprehensive vault and account data)**
 
@@ -750,9 +406,9 @@ Lens contracts provide read-only aggregated views of Euler protocol data. They s
 
 |------|---------|
 
-| AccountLens | Account positions, liquidity, health, time to liquidation |
+| AccountLens | Account positions, liquidity, health, TTL |
 
-| VaultLens | Vault configuration, state, LTVs, rewards |
+| VaultLens | Vault configuration, state, LTVs, IRM info |
 
 | OracleLens | Oracle configuration and validation |
 
@@ -765,7 +421,7 @@ Lens contracts provide read-only aggregated views of Euler protocol data. They s
 **Incorrect: making many individual calls**
 
 ```typescript
-// WRONG: Multiple calls, complex assembly, easy to miss data
+// WRONG: Multiple calls easy to miss data
 const totalAssets = await vault.read.totalAssets();
 const totalBorrows = await vault.read.totalBorrows();
 const cash = await vault.read.cash();
@@ -864,18 +520,90 @@ const health = liquidityInfo.liabilityValueLiquidation > 0n
 
 console.log(`Health Factor: ${formatUnits(health, 18)}`);
 
-// Time to liquidation (special values)
-const TTL_INFINITY = await accountLens.read.TTL_INFINITY();
-const TTL_LIQUIDATION = await accountLens.read.TTL_LIQUIDATION();
+// Time to liquidation (special int256 values)
+const TTL_INFINITY = (2n ** 255n) - 1n;        // type(int256).max - no debt or safe indefinitely
+const TTL_MORE_THAN_ONE_YEAR = (2n ** 255n) - 2n; // safe for at least one year
+const TTL_LIQUIDATION = -1n;                   // already liquidatable
+const TTL_ERROR = -2n;                         // computation error
 
-if (liquidityInfo.timeToLiquidation === TTL_INFINITY) {
-  console.log('Safe: Infinite time to liquidation');
-} else if (liquidityInfo.timeToLiquidation === TTL_LIQUIDATION) {
+const ttl = liquidityInfo.timeToLiquidation;
+if (ttl === TTL_INFINITY || ttl === TTL_MORE_THAN_ONE_YEAR) {
+  console.log('Safe: No liquidation risk');
+} else if (ttl === TTL_LIQUIDATION) {
   console.log('DANGER: Already liquidatable!');
-} else if (liquidityInfo.timeToLiquidation > 0) {
-  console.log(`Time to liquidation: ${liquidityInfo.timeToLiquidation} seconds`);
+} else if (ttl === TTL_ERROR) {
+  console.log('Error computing TTL');
+} else if (ttl > 0n) {
+  console.log(`Time to liquidation: ${ttl} seconds`);
 }
 ```
+
+**Correct: using AccountLens for all EVC-enabled vaults**
+
+```typescript
+// Get info for ALL vaults an account has enabled (collaterals + controllers)
+const multiVaultInfo = await accountLens.read.getAccountEnabledVaultsInfo([
+  evcAddress,
+  account
+]);
+
+// EVC state
+console.log(`Owner: ${multiVaultInfo.evcAccountInfo.owner}`);
+console.log(`Controllers: ${multiVaultInfo.evcAccountInfo.enabledControllers.length}`);
+console.log(`Collaterals: ${multiVaultInfo.evcAccountInfo.enabledCollaterals.length}`);
+
+// Position in each vault
+for (const vaultInfo of multiVaultInfo.vaultAccountInfo) {
+  console.log(`\nVault: ${vaultInfo.vault}`);
+  console.log(`  Deposited: ${vaultInfo.assets}`);
+  console.log(`  Borrowed: ${vaultInfo.borrowed}`);
+  console.log(`  Is Controller: ${vaultInfo.isController}`);
+  console.log(`  Is Collateral: ${vaultInfo.isCollateral}`);
+}
+```
+
+**Correct: using AccountLens with no-validation mode**
+
+```typescript
+// getAccountLiquidityInfoNoValidation handles certain query failures gracefully
+// Useful for accounts without active debt or when vault is not a controller
+const liquidityInfo = await accountLens.read.getAccountLiquidityInfoNoValidation([
+  account,
+  vaultAddress
+]);
+
+// Returns zeroed values instead of failing for:
+// - E_TransientState (mid-batch checks)
+// - E_NoLiability (no debt)
+// - E_NotController (vault not enabled as controller)
+// - E_NoPriceOracle (oracle not configured)
+```
+
+**Correct: using AccountLens for on-chain reward info**
+
+```typescript
+// On-chain reward info (legacy mechanism - limited adoption)
+// Most rewards are distributed off-chain via Merkl instead
+const accountInfo = await accountLens.read.getAccountInfo([account, vaultAddress]);
+const rewardInfo = accountInfo.accountRewardInfo;
+
+// balanceTracker will be address(0) if no on-chain rewards configured
+if (rewardInfo.balanceTracker !== zeroAddress) {
+  console.log(`Balance Tracker: ${rewardInfo.balanceTracker}`);
+  console.log(`Balance Forwarder Enabled: ${rewardInfo.balanceForwarderEnabled}`);
+  console.log(`Tracked Balance: ${rewardInfo.balance}`);
+
+  // Earned rewards (on-chain mechanism)
+  for (const reward of rewardInfo.enabledRewardsInfo) {
+    console.log(`\nReward Token: ${reward.reward}`);
+    console.log(`  Earned: ${reward.earnedReward}`);
+  }
+} else {
+  console.log('No on-chain rewards configured - check Merkl for off-chain rewards');
+}
+```
+
+> **Note:** The balance tracking and reward-streams mechanism (`TrackingRewardStreams`) is embedded in the EVK but has seen limited adoption. Most Euler rewards are distributed via **off-chain mechanisms like [Merkl](https://merkl.xyz/)**. The on-chain reward-streams may not be supported in all UIs. Check the specific vault's reward distribution method before relying on this data.
 
 **Correct: using VaultLens for IRM curve data**
 
@@ -933,23 +661,6 @@ const oracleInfo = await oracleLens.read.getOracleInfo([
 console.log(`Oracle: ${oracleInfo.name}`);
 console.log(`Oracle Address: ${oracleInfo.oracle}`);
 // oracleInfo.oracleInfo contains encoded adapter-specific info
-
-// Check for stale pull oracles (Pyth, RedStone)
-const isStale = await oracleLens.read.isStalePullOracle([
-  oracleAddress,
-  '0x' // failure reason bytes
-]);
-
-if (isStale) {
-  console.warn('Oracle prices are stale - update required!');
-}
-
-// Get valid oracle adapters for a pair
-const validAdapters = await oracleLens.read.getValidAdapters([
-  baseToken,
-  quoteToken
-]);
-console.log('Valid adapters:', validAdapters);
 ```
 
 **Correct: using UtilsLens for calculations**
@@ -996,58 +707,88 @@ const ttl = await utilsLens.read.calculateTimeToLiquidation([
 ]);
 ```
 
-**Correct: using EulerEarnVaultLens for yield strategies**
+**Correct: using IRMLens for interest rate model details**
 
-```solidity
-import {IVaultLens} from "euler-interfaces/interfaces/IVaultLens.sol";
-import {IAccountLens} from "euler-interfaces/interfaces/IAccountLens.sol";
+```typescript
+import irmLensABI from '@eulerxyz/euler-interfaces/abis/IRMLens.json';
 
-contract MyContract {
-    IVaultLens public vaultLens;
-    IAccountLens public accountLens;
-    
-    constructor(address _vaultLens, address _accountLens) {
-        vaultLens = IVaultLens(_vaultLens);
-        accountLens = IAccountLens(_accountLens);
-    }
-    
-    function getAccountHealth(address account, address vault) 
-        external 
-        view 
-        returns (uint256 health) 
-    {
-        IAccountLens.AccountLiquidityInfo memory liq = 
-            accountLens.getAccountLiquidityInfo(account, vault);
-        
-        if (liq.queryFailure) revert("Query failed");
-        if (liq.liabilityValueLiquidation == 0) return type(uint256).max;
-        
-        health = (liq.collateralValueLiquidation * 1e18) / liq.liabilityValueLiquidation;
-    }
-    
-    function getVaultUtilization(address vault) 
-        external 
-        view 
-        returns (uint256 utilization) 
-    {
-        IVaultLens.VaultInfoDynamic memory info = 
-            vaultLens.getVaultInfoDynamic(vault);
-        
-        uint256 total = info.totalCash + info.totalBorrowed;
-        if (total == 0) return 0;
-        
-        utilization = (info.totalBorrowed * 1e18) / total;
-    }
+const irmLens = getContract({
+  address: lens.irmLens as Address,
+  abi: irmLensABI,
+  client: publicClient
+});
+
+// Get detailed IRM info including type and parameters
+const irmInfo = await irmLens.read.getInterestRateModelInfo([irmAddress]);
+
+console.log(`IRM Address: ${irmInfo.interestRateModel}`);
+console.log(`IRM Type: ${irmInfo.interestRateModelType}`);
+// Types: 0=UNKNOWN, 1=KINK, 2=ADAPTIVE_CURVE, 3=KINKY, 4=FIXED_CYCLICAL_BINARY
+
+// Decode params based on type
+if (irmInfo.interestRateModelType === 1) { // KINK
+  const params = decodeAbiParameters(
+    [{ type: 'tuple', components: [
+      { name: 'baseRate', type: 'uint256' },
+      { name: 'slope1', type: 'uint256' },
+      { name: 'slope2', type: 'uint256' },
+      { name: 'kink', type: 'uint256' }
+    ]}],
+    irmInfo.interestRateModelParams
+  )[0];
+  console.log(`Kink IRM: baseRate=${params.baseRate}, slope1=${params.slope1}, slope2=${params.slope2}, kink=${params.kink}`);
+} else if (irmInfo.interestRateModelType === 2) { // ADAPTIVE_CURVE
+  const params = decodeAbiParameters(
+    [{ type: 'tuple', components: [
+      { name: 'targetUtilization', type: 'int256' },
+      { name: 'initialRateAtTarget', type: 'int256' },
+      { name: 'minRateAtTarget', type: 'int256' },
+      { name: 'maxRateAtTarget', type: 'int256' },
+      { name: 'curveSteepness', type: 'int256' },
+      { name: 'adjustmentSpeed', type: 'int256' }
+    ]}],
+    irmInfo.interestRateModelParams
+  )[0];
+  console.log(`Adaptive Curve IRM: target=${params.targetUtilization}`);
 }
 ```
 
-**Solidity: Using Lens contracts on-chain:**
+**Correct: using EulerEarnVaultLens for yield strategies**
+
+```solidity
+// DON'T use Lens on-chain - it's not gas efficient
+// IAccountLens(lens).getAccountLiquidityInfo(account, vault); // Expensive!
+
+// DO call vault methods directly for on-chain checks
+(uint256 collateralValue, uint256 liabilityValue) = IEVault(vault).accountLiquidity(account, true);
+bool isHealthy = collateralValue >= liabilityValue;
+```
+
+**Important: Lens contracts are for off-chain queries only**
+
+Lens contracts are optimized for convenience, not gas efficiency. They aggregate multiple calls and return large structs, which is expensive on-chain. For on-chain integrations, call vault methods directly:
 
 **Key Lens Functions Summary:**
 
 | Lens | Function | Returns |
 
 |------|----------|---------|
+
+| AccountLens | `getAccountInfo(account, vault)` | Full account position + EVC state + rewards |
+
+| AccountLens | `getAccountEnabledVaultsInfo(evc, account)` | Info for ALL enabled vaults |
+
+| AccountLens | `getAccountLiquidityInfo(account, vault)` | Health, collateral values, TTL |
+
+| AccountLens | `getAccountLiquidityInfoNoValidation(account, vault)` | Same as above, handles errors gracefully |
+
+| AccountLens | `getTimeToLiquidation(account, vault)` | Seconds until liquidatable (int256) |
+
+| AccountLens | `getEVCAccountInfo(evc, account)` | EVC state: controllers, collaterals, lockdown |
+
+| AccountLens | `getVaultAccountInfo(account, vault)` | Position: shares, assets, borrowed, allowances |
+
+| AccountLens | `getRewardAccountInfo(account, vault)` | On-chain reward tracking (legacy, limited adoption) |
 
 | VaultLens | `getVaultInfoFull(vault)` | Complete vault config + state |
 
@@ -1059,15 +800,11 @@ contract MyContract {
 
 | VaultLens | `getVaultKinkInterestRateModelInfo(vault)` | IRM curve data |
 
-| AccountLens | `getAccountInfo(account, vault)` | Full account position |
-
-| AccountLens | `getAccountLiquidityInfo(account, vault)` | Health and liquidation info |
-
-| AccountLens | `getTimeToLiquidation(account, vault)` | Seconds until liquidatable |
-
 | OracleLens | `getOracleInfo(oracle, bases, quotes)` | Oracle configuration |
 
 | OracleLens | `isStalePullOracle(oracle, reason)` | Check for stale Pyth/RedStone |
+
+| IRMLens | `getInterestRateModelInfo(irm)` | IRM type + decoded parameters |
 
 | UtilsLens | `getAPYs(vault)` | Current borrow/supply APY |
 

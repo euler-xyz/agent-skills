@@ -1,130 +1,166 @@
 ---
 title: Data Querying with Subgraphs
 impact: MEDIUM
-impactDescription: Efficiently querying historical and aggregated data
-tags: subgraph, graphql, data, indexing, analytics
+impactDescription: Track active accounts and vault factories
+tags: subgraph, graphql, data, indexing, tracking
 ---
 
 ## Data Querying with Subgraphs
 
-Euler provides subgraphs deployed via Goldsky for efficient querying of historical data, vault statistics, and account positions across all supported chains.
+Euler provides a minimal subgraph deployed via Goldsky for tracking active accounts and vault factory origins. The subgraph is intentionally limited in scope - **use Lens contracts for real-time vault data, positions, and configuration**.
 
-**Incorrect (querying everything on-chain):**
+**Subgraph Schema:**
 
-```typescript
-// WRONG: Fetching all vault positions on-chain is expensive and slow
-const allVaults = await factory.read.getAllProxies();
-for (const vault of allVaults) {
-  const info = await vault.read.getVaultInfo(); // Many RPC calls!
+```graphql
+# Vault entity - tracks which factory created each vault
+type Vault @entity(immutable: true) {
+  id: Bytes!      # vault address
+  factory: Bytes! # factory that created this vault
+}
+
+# Active account tracking - indexed by address prefix (first 19 bytes)
+# Groups main account with all 256 sub-accounts under the same prefix
+type TrackingActiveAccount @entity {
+  id: Bytes!            # addressPrefix (first 19 bytes)
+  addressPrefix: Bytes! # first 19 bytes shared by main address and sub-accounts
+  deposits: [Bytes!]!   # list of account+vault IDs with deposits
+  borrows: [Bytes!]!    # list of account+vault IDs with borrows
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# Per-account vault balance tracking
+type TrackingVaultBalance @entity {
+  id: Bytes!            # account + vault (concatenated)
+  vault: Bytes!
+  addressPrefix: Bytes! # links to TrackingActiveAccount
+  account: Bytes!
+  balance: BigInt!      # vault shares
+  debt: BigInt!         # borrowed amount
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
 }
 ```
 
-**Correct (using Subgraph for aggregated data):**
+**When to Use Subgraph vs Lens:**
 
-```typescript
-// Subgraphs are deployed via Goldsky
-// Check docs.euler.finance for current endpoint URLs
+| Use Case | Tool |
+|----------|------|
+| Find all active accounts | Subgraph: `TrackingActiveAccount` |
+| Check which factory created a vault to know the vault type | Subgraph: `Vault.factory` |
+| Get vault configuration (caps, LTVs, oracle) | Lens: `VaultLens.getVaultInfoFull()` |
+| Get account position details | Lens: `AccountLens.getAccountInfo()` |
+| Get real-time balances and health | Lens: `AccountLens.getAccountLiquidityInfo()` |
+| Get interest rates and APYs | Lens: `UtilsLens.getAPYs()` |
 
-// Supported networks (as of 2025):
-// mainnet, arbitrum, base, swell, sonic, ink, unichain, avalanche,
-// berachain, bob, bsc, worldchain, hyperevm, optimism, gnosis,
-// tac, linea, plasma, mantle, monad
-```
-
-**Correct (querying vault data):**
+**Correct (querying vault factory origin):**
 
 ```graphql
-# Get all vaults with their configuration
-query GetVaults {
-  eulerVaults(first: 100, orderBy: blockTimestamp, orderDirection: desc) {
+# Find which factory deployed a vault
+query GetVaultFactory($vault: Bytes!) {
+  vault(id: $vault) {
     id
-    evault
-    name
-    symbol
-    asset
-    decimals
-    supplyCap
-    borrowCap
-    interestFee
-    oracle
-    unitOfAccount
-    governonAdmin
-    feeReceiver
-    creator
-    interestRateModel
-    collaterals
-    perspectives
+    factory
+  }
+}
+
+# Get all vaults from a specific factory
+query GetVaultsFromFactory($factory: Bytes!) {
+  vaults(where: { factory: $factory }) {
+    id
+    factory
+  }
+}
+```
+
+**Correct (querying active accounts by address prefix):**
+
+```graphql
+# Get all active accounts (accounts with deposits or borrows)
+# Note: Indexed by address prefix (first 19 bytes)
+# This groups main account + all 256 sub-accounts together
+query GetActiveAccounts($first: Int = 100) {
+  trackingActiveAccounts(first: $first, where: { deposits_not: [], borrows_not: [] }) {
+    id
+    addressPrefix
+    deposits
+    borrows
+    blockTimestamp
+  }
+}
+
+# Find active accounts by address prefix
+query GetAccountByPrefix($prefix: Bytes!) {
+  trackingActiveAccount(id: $prefix) {
+    addressPrefix
+    deposits
+    borrows
     blockTimestamp
   }
 }
 ```
 
-**Correct (querying vault status/state):**
+**Correct (querying account vault balances - amounts are updated at the time of last interaction):**
 
 ```graphql
-# Get vault status with TVL and rates
-query GetVaultStatus($vault: Bytes!) {
-  vaultStatuses(
-    where: { vault: $vault }
-    orderBy: timestamp
-    orderDirection: desc
-    first: 1
-  ) {
+# Get all vault positions for an address prefix
+query GetPositionsByPrefix($prefix: Bytes!) {
+  trackingVaultBalances(where: { addressPrefix: $prefix }) {
     id
     vault
-    totalShares
-    totalBorrows
-    cash
-    accumulatedFees
-    interestAccumulator
-    interestRate
-    supplyApy
-    borrowApy
-    timestamp
-    blockTimestamp
-  }
-}
-```
-
-**Correct (querying account balances via TrackingVaultBalance):**
-
-```graphql
-# Get all positions for an account
-# Note: Account entity only has id, subAccount, owner
-# Use TrackingVaultBalance for position data
-query GetAccountPositions($mainAddress: Bytes!) {
-  trackingVaultBalances(where: { mainAddress: $mainAddress }) {
-    id
-    vault
-    mainAddress
     account
     balance
     debt
-    isControllerEnabled
     blockTimestamp
+  }
+}
+
+# Get positions with non-zero balances
+query GetActivePositions($prefix: Bytes!) {
+  trackingVaultBalances(
+    where: { addressPrefix: $prefix, balance_gt: "0" }
+  ) {
+    vault
+    account
+    balance
+    debt
+  }
+}
+
+# Get positions with active borrows
+query GetBorrowPositions($prefix: Bytes!) {
+  trackingVaultBalances(
+    where: { addressPrefix: $prefix, debt_gt: "0" }
+  ) {
+    vault
+    account
+    balance
+    debt
   }
 }
 ```
 
-**Correct (querying interest rate history):**
+**TypeScript: Computing address prefix:**
 
-```graphql
-# Get interest rate snapshots for a vault
-query GetInterestRateHistory($vault: Bytes!, $since: BigInt!) {
-  vaultStatuses(
-    where: { vault: $vault, timestamp_gte: $since }
-    orderBy: timestamp
-    orderDirection: asc
-  ) {
-    timestamp
-    interestRate
-    supplyApy
-    borrowApy
-    totalShares
-    totalBorrows
-    cash
-  }
+```typescript
+// The subgraph indexes by address prefix (first 19 bytes)
+// This groups a main account with all its 256 EVC sub-accounts
+function getAddressPrefix(account: string): string {
+  // Address is 20 bytes, prefix is first 19 bytes
+  // Remove '0x', take first 38 hex chars (19 bytes), add '0x' back
+  return '0x' + account.slice(2, 40); // first 19 bytes
 }
+
+// Example: All these accounts share the same prefix
+const mainAccount = '0x1234567890abcdef1234567890abcdef12345678';
+const subAccount1 = '0x1234567890abcdef1234567890abcdef12345601'; // sub-account 1
+const subAccount2 = '0x1234567890abcdef1234567890abcdef12345602'; // sub-account 2
+
+const prefix = getAddressPrefix(mainAccount);
+// prefix = '0x1234567890abcdef1234567890abcdef123456'
+// Same prefix for all sub-accounts!
 ```
 
 **TypeScript: Complete subgraph integration:**
@@ -133,244 +169,128 @@ query GetInterestRateHistory($vault: Bytes!, $since: BigInt!) {
 import { request, gql } from 'graphql-request';
 
 // Get current endpoint from docs.euler.finance
-const SUBGRAPH_URL = 'https://api.goldsky.com/api/public/.../euler-mainnet/gn';
+// Deployed via Goldsky
+const SUBGRAPH_URL = 'https://api.goldsky.com/...';
 
-// Query vault information
-const getVaultInfo = async (vaultAddress: string) => {
+// Get address prefix (first 19 bytes)
+function getAddressPrefix(account: string): string {
+  return ('0x' + account.slice(2, 40)).toLowerCase();
+}
+
+// Check which factory created a vault
+async function getVaultFactory(vaultAddress: string): Promise<string | null> {
   const query = gql`
-    query GetVault($id: Bytes!) {
-      eulerVault(id: $id) {
-        id
-        evault
-        name
-        symbol
-        asset
-        decimals
-        supplyCap
-        borrowCap
-        interestFee
-        oracle
-        unitOfAccount
-        collaterals
-        governonAdmin
-        feeReceiver
-        creator
-        blockTimestamp
+    query GetVaultFactory($id: Bytes!) {
+      vault(id: $id) {
+        factory
       }
     }
   `;
   
-  return request(SUBGRAPH_URL, query, { id: vaultAddress.toLowerCase() });
-};
-
-// Query vault current state
-const getVaultStatus = async (vaultAddress: string) => {
-  const query = gql`
-    query GetVaultStatus($vault: Bytes!) {
-      vaultStatuses(
-        where: { vault: $vault }
-        orderBy: timestamp
-        orderDirection: desc
-        first: 1
-      ) {
-        totalShares
-        totalBorrows
-        cash
-        interestRate
-        supplyApy
-        borrowApy
-        timestamp
-      }
-    }
-  `;
+  const result = await request(SUBGRAPH_URL, query, { 
+    id: vaultAddress.toLowerCase() 
+  });
   
-  return request(SUBGRAPH_URL, query, { vault: vaultAddress.toLowerCase() });
-};
+  return result.vault?.factory ?? null;
+}
 
-// Query user positions
-const getUserPositions = async (account: string) => {
+// Get all active positions for an account (including sub-accounts)
+async function getAccountPositions(account: string) {
+  const prefix = getAddressPrefix(account);
+  
   const query = gql`
-    query GetUserPositions($mainAddress: Bytes!) {
-      trackingVaultBalances(
-        where: { mainAddress: $mainAddress, balance_gt: "0" }
-      ) {
+    query GetPositions($prefix: Bytes!) {
+      trackingVaultBalances(where: { addressPrefix: $prefix }) {
         vault
+        account
         balance
         debt
-        isControllerEnabled
         blockTimestamp
       }
     }
   `;
   
-  return request(SUBGRAPH_URL, query, { mainAddress: account.toLowerCase() });
-};
+  return request(SUBGRAPH_URL, query, { prefix });
+}
 
-// Query historical APY
-const getHistoricalAPY = async (vault: string, days: number = 30) => {
-  const since = Math.floor(Date.now() / 1000) - (days * 24 * 60 * 60);
+// Check if an account has any active positions
+async function isAccountActive(account: string): Promise<boolean> {
+  const prefix = getAddressPrefix(account);
   
   const query = gql`
-    query GetAPYHistory($vault: Bytes!, $since: BigInt!) {
-      vaultStatuses(
-        where: { vault: $vault, timestamp_gte: $since }
-        orderBy: timestamp
-        first: 1000
-      ) {
-        timestamp
-        interestRate
-        supplyApy
-        borrowApy
-        totalShares
-        totalBorrows
+    query CheckActive($prefix: Bytes!) {
+      trackingActiveAccount(id: $prefix) {
+        deposits
+        borrows
       }
     }
   `;
   
-  return request(SUBGRAPH_URL, query, { 
-    vault: vault.toLowerCase(), 
-    since: since.toString() 
-  });
-};
-```
-
-**Correct (querying liquidation events):**
-
-```graphql
-# Get recent liquidations
-query GetLiquidations($since: BigInt!) {
-  liquidates(
-    where: { blockTimestamp_gte: $since }
-    orderBy: blockTimestamp
-    orderDirection: desc
-    first: 100
-  ) {
-    id
-    blockTimestamp
-    liquidator
-    violator
-    vault
-    collateral
-    repayAssets
-    yieldBalance
-    transactionHash
-  }
+  const result = await request(SUBGRAPH_URL, query, { prefix });
+  const active = result.trackingActiveAccount;
+  
+  return active && (active.deposits.length > 0 || active.borrows.length > 0);
 }
 ```
 
-**Correct (querying deposits and withdrawals):**
-
-```graphql
-# Get deposit events
-query GetDeposits($vault: Bytes!, $since: BigInt!) {
-  deposits(
-    where: { vault: $vault, blockTimestamp_gte: $since }
-    orderBy: blockTimestamp
-    orderDirection: desc
-  ) {
-    id
-    sender
-    owner
-    assets
-    shares
-    vault
-    blockTimestamp
-    transactionHash
-  }
-}
-
-# Get withdrawal events
-query GetWithdrawals($vault: Bytes!, $since: BigInt!) {
-  withdraws(
-    where: { vault: $vault, blockTimestamp_gte: $since }
-    orderBy: blockTimestamp
-    orderDirection: desc
-  ) {
-    id
-    sender
-    receiver
-    owner
-    assets
-    shares
-    vault
-    blockTimestamp
-    transactionHash
-  }
-}
-```
-
-**Correct (querying Euler Earn vaults):**
-
-```graphql
-# Get Euler Earn aggregator vaults
-query GetEulerEarnVaults {
-  eulerEarnVaults(first: 100) {
-    id
-    name
-    symbol
-    asset
-    owner
-    curator
-    guardian
-    feeReceiver
-    performanceFee
-    timelock
-    totalShares
-    totalAssets
-    totalAllocated
-    supplyQueue
-    blockTimestamp
-  }
-}
-```
-
-**Combining Subgraph with On-Chain Data:**
+**Combining Subgraph with Lens Contracts:**
 
 ```typescript
-// Best practice: Use subgraph for discovery, on-chain for current state
+import { getContract } from 'viem';
+import { request, gql } from 'graphql-request';
+import lens from '@eulerxyz/euler-interfaces/addresses/1/LensAddresses.json';
+import accountLensABI from '@eulerxyz/euler-interfaces/abis/AccountLens.json';
 
-// 1. Use subgraph to find relevant vaults
-const vaultsQuery = gql`
+// Best practice: 
+// 1. Use subgraph to discover active accounts
+// 2. Use Lens contracts for detailed, real-time position data
+
+// Step 1: Find active accounts from subgraph
+const activeAccountsQuery = gql`
   query {
-    eulerVaults(first: 20, orderBy: blockTimestamp, orderDirection: desc) {
-      evault
-      name
-      symbol
-      asset
+    trackingActiveAccounts(first: 100, where: { borrows_not: [] }) {
+      addressPrefix
+      borrows
     }
   }
 `;
-const topVaults = await request(SUBGRAPH_URL, vaultsQuery);
+const activeAccounts = await request(SUBGRAPH_URL, activeAccountsQuery);
 
-// 2. Use on-chain for real-time data
-const vaultLens = getContract({
-  address: VAULT_LENS,
-  abi: vaultLensABI,
-  client
+// Step 2: Use AccountLens for detailed position data
+const accountLens = getContract({
+  address: lens.accountLens as Address,
+  abi: accountLensABI,
+  client: publicClient
 });
 
-for (const vault of topVaults.eulerVaults) {
-  // Get current state on-chain (more accurate)
-  const info = await vaultLens.read.getVaultInfoDynamic([vault.evault]);
-  
-  // Combine with historical data from subgraph
-  const history = await getHistoricalAPY(vault.evault, 7);
-  
-  console.log(`${vault.symbol}: Current APY ${info.supplyAPY}`);
+for (const tracking of activeAccounts.trackingActiveAccounts) {
+  // Get detailed liquidity info for each borrowing position
+  for (const positionId of tracking.borrows) {
+    // positionId is account + vault concatenated
+    const account = '0x' + positionId.slice(2, 42);
+    const vault = '0x' + positionId.slice(42);
+    
+    // Real-time health check via Lens
+    const liquidityInfo = await accountLens.read.getAccountLiquidityInfo([
+      account,
+      vault
+    ]);
+    
+    console.log(`Account ${account} in vault ${vault}:`);
+    console.log(`  Health: ${liquidityInfo.collateralValueLiquidation / liquidityInfo.liabilityValueLiquidation}`);
+    console.log(`  TTL: ${liquidityInfo.timeToLiquidation}`);
+  }
 }
 ```
 
-**Available Subgraph Entities:**
+**Important Notes:**
 
-| Entity | Key Fields | Use Case |
-|--------|------------|----------|
-| EulerVault | evault, asset, caps, oracle | Vault discovery & config |
-| VaultStatus | totalShares, totalBorrows, APYs | TVL, rates, utilization |
-| TrackingVaultBalance | balance, debt, vault | User positions |
-| Liquidate | violator, repayAssets, collateral | Liquidation events |
-| Deposit/Withdraw | assets, shares, sender | Transaction history |
-| Borrow/Repay | assets, account | Borrow activity |
-| EulerEarnVault | totalAssets, strategies | Earn aggregators |
-| EulerSwapPool | reserves, fee, assets | Swap pool data |
+1. **Minimal by design**: The subgraph only tracks account activity and vault factories. Use Lens contracts for vault configuration, LTVs, caps, oracles, IRM info, etc.
+
+2. **Address prefix indexing**: Accounts are indexed by their first 19 bytes. This means a main account and all its 256 EVC sub-accounts share the same `TrackingActiveAccount` entity.
+
+3. **Balance tracking**: `TrackingVaultBalance` stores raw balances and debt at the time of the last interactions. For accurate health factor and liquidation status, use `AccountLens.getAccountLiquidityInfo()`.
+
+4. **Factory verification**: Use `Vault.factory` to verify a vault was deployed from an official Euler factory.
 
 Reference: [Euler Subgraph Repository](https://github.com/euler-xyz/euler-subgraph)

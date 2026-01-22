@@ -7,7 +7,7 @@ tags: addresses, abi, interfaces, contracts, chains
 
 ## Contract Addresses and ABIs
 
-The `euler-interfaces` package provides verified contract addresses and ABIs for all supported chains. Always use this package rather than hardcoding addresses.
+The `euler-interfaces` repository provides verified contract addresses and ABIs for all supported chains. Always use this package rather than hardcoding addresses.
 
 **Incorrect (hardcoding addresses):**
 
@@ -83,22 +83,6 @@ const { core: arbCore } = await getEulerAddresses(42161);     // Arbitrum
     └── ...
 ```
 
-**Supported Chains:**
-
-| Chain | Chain ID | Package Path |
-|-------|----------|--------------|
-| Ethereum | 1 | `addresses/1/` |
-| Arbitrum | 42161 | `addresses/42161/` |
-| Base | 8453 | `addresses/8453/` |
-| Optimism | 10 | `addresses/10/` |
-| Polygon | 137 | `addresses/137/` |
-| Avalanche | 43114 | `addresses/43114/` |
-| BSC | 56 | `addresses/56/` |
-| Linea | 59144 | `addresses/59144/` |
-| Mantle | 5000 | `addresses/5000/` |
-| Berachain | 80094 | `addresses/80094/` |
-| Sonic | 146 | `addresses/146/` |
-
 **Correct (using with viem):**
 
 ```typescript
@@ -122,38 +106,6 @@ const evc = getContract({
 
 // Check collaterals for an account
 const collaterals = await evc.read.getCollaterals([accountAddress]);
-```
-
-**Available ABIs:**
-
-```typescript
-// Core contracts
-import EVault from '@eulerxyz/euler-interfaces/abis/EVault.json';
-import EthereumVaultConnector from '@eulerxyz/euler-interfaces/abis/EthereumVaultConnector.json';
-import GenericFactory from '@eulerxyz/euler-interfaces/abis/GenericFactory.json';
-
-// Oracle
-import EulerRouter from '@eulerxyz/euler-interfaces/abis/EulerRouter.json';
-
-// EulerEarn
-import EulerEarn from '@eulerxyz/euler-interfaces/abis/EulerEarn.json';
-import EulerEarnFactory from '@eulerxyz/euler-interfaces/abis/EulerEarnFactory.json';
-import PublicAllocator from '@eulerxyz/euler-interfaces/abis/PublicAllocator.json';
-
-// EulerSwap
-import EulerSwap from '@eulerxyz/euler-interfaces/abis/EulerSwap.json';
-import EulerSwapFactory from '@eulerxyz/euler-interfaces/abis/EulerSwapFactory.json';
-
-// Lens
-import VaultLens from '@eulerxyz/euler-interfaces/abis/VaultLens.json';
-import AccountLens from '@eulerxyz/euler-interfaces/abis/AccountLens.json';
-import OracleLens from '@eulerxyz/euler-interfaces/abis/OracleLens.json';
-import IRMLens from '@eulerxyz/euler-interfaces/abis/IRMLens.json';
-
-// Periphery
-import FeeFlowController from '@eulerxyz/euler-interfaces/abis/FeeFlowController.json';
-import RewardToken from '@eulerxyz/euler-interfaces/abis/RewardToken.json';
-import TrackingRewardStreams from '@eulerxyz/euler-interfaces/abis/TrackingRewardStreams.json';
 ```
 
 **Correct (Solidity remapping):**

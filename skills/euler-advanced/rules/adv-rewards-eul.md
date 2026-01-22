@@ -76,80 +76,10 @@ reward.withdrawToByLockTimestamps(
 );
 ```
 
-**Vesting Schedule Calculation:**
-
-```solidity
-// The unlock share formula from RewardToken:
-function calculateUnlockShare(uint256 lockTimestamp) public view returns (uint256) {
-    uint256 SCALE = 1e18;
-    uint256 LOCK_NORMALIZATION_FACTOR = 1 days;
-    
-    if (lockTimestamp > block.timestamp) return 0;
-    
-    uint256 timeElapsed = block.timestamp - lockTimestamp;
-    
-    // First day: 20% unlocked
-    if (timeElapsed <= LOCK_NORMALIZATION_FACTOR) {
-        return 0.2e18;
-    }
-    // After 180 days: 100% unlocked
-    else if (timeElapsed >= 180 days) {
-        return SCALE;
-    }
-    // Linear unlock of remaining 80% over 179 days
-    else {
-        return (timeElapsed - LOCK_NORMALIZATION_FACTOR) 
-            * 0.8e18 
-            / (180 days - LOCK_NORMALIZATION_FACTOR) 
-            + 0.2e18;
-    }
-}
-```
-
-**TypeScript: Tracking reward vesting:**
-
-```typescript
-import { getContract, formatEther } from 'viem';
-
-const rewardToken = getContract({
-  address: rewardTokenAddress,
-  abi: rewardTokenABI,
-  client: publicClient,
-});
-
-// Get user's locked amounts
-const [lockTimestamps, amounts] = await rewardToken.read.getLockedAmounts([userAddress]);
-
-let totalLocked = 0n;
-let totalUnlockable = 0n;
-
-for (let i = 0; i < lockTimestamps.length; i++) {
-  const [accountAmount, remainderAmount] = 
-    await rewardToken.read.getWithdrawAmountsByLockTimestamp([
-      userAddress, 
-      lockTimestamps[i]
-    ]);
-  
-  totalLocked += amounts[i];
-  totalUnlockable += accountAmount;
-  
-  const lockDate = new Date(Number(lockTimestamps[i]) * 1000);
-  const fullUnlockDate = new Date(lockDate.getTime() + 180 * 24 * 60 * 60 * 1000);
-  
-  console.log(`Lock from ${lockDate.toISOString()}:`);
-  console.log(`  Total: ${formatEther(amounts[i])} rEUL`);
-  console.log(`  Unlockable: ${formatEther(accountAmount)} rEUL`);
-  console.log(`  Full unlock: ${fullUnlockDate.toISOString()}`);
-}
-
-console.log(`\nTotal Locked: ${formatEther(totalLocked)} rEUL`);
-console.log(`Total Unlockable: ${formatEther(totalUnlockable)} rEUL`);
-```
-
 **Key Points:**
 
 1. **Transfers restricted**: Non-whitelisted accounts cannot transfer to each other
-2. **Remainder receiver**: Unvested tokens go to DAO treasury when claimed early
+2. **Remainder receiver**: Unvested tokens are burned when claimed early
 3. **Lock normalization**: Locks are grouped by day for gas efficiency
 4. **Whitelist roles**: ADMIN can freely move tokens, DISTRIBUTOR can distribute but not withdraw
 

@@ -105,53 +105,11 @@ reward.withdrawToByLockTimestamps(
 );
 ```
 
-**Vesting Schedule Calculation:**
-
-```typescript
-import { getContract, formatEther } from 'viem';
-
-const rewardToken = getContract({
-  address: rewardTokenAddress,
-  abi: rewardTokenABI,
-  client: publicClient,
-});
-
-// Get user's locked amounts
-const [lockTimestamps, amounts] = await rewardToken.read.getLockedAmounts([userAddress]);
-
-let totalLocked = 0n;
-let totalUnlockable = 0n;
-
-for (let i = 0; i < lockTimestamps.length; i++) {
-  const [accountAmount, remainderAmount] = 
-    await rewardToken.read.getWithdrawAmountsByLockTimestamp([
-      userAddress, 
-      lockTimestamps[i]
-    ]);
-  
-  totalLocked += amounts[i];
-  totalUnlockable += accountAmount;
-  
-  const lockDate = new Date(Number(lockTimestamps[i]) * 1000);
-  const fullUnlockDate = new Date(lockDate.getTime() + 180 * 24 * 60 * 60 * 1000);
-  
-  console.log(`Lock from ${lockDate.toISOString()}:`);
-  console.log(`  Total: ${formatEther(amounts[i])} rEUL`);
-  console.log(`  Unlockable: ${formatEther(accountAmount)} rEUL`);
-  console.log(`  Full unlock: ${fullUnlockDate.toISOString()}`);
-}
-
-console.log(`\nTotal Locked: ${formatEther(totalLocked)} rEUL`);
-console.log(`Total Unlockable: ${formatEther(totalUnlockable)} rEUL`);
-```
-
-**TypeScript: Tracking reward vesting:**
-
 **Key Points:**
 
 1. **Transfers restricted**: Non-whitelisted accounts cannot transfer to each other
 
-2. **Remainder receiver**: Unvested tokens go to DAO treasury when claimed early
+2. **Remainder receiver**: Unvested tokens are burned when claimed early
 
 3. **Lock normalization**: Locks are grouped by day for gas efficiency
 
@@ -163,12 +121,12 @@ Reference: [https://github.com/euler-xyz/evk-periphery/blob/master/src/ERC20/dep
 
 **Impact: MEDIUM (Understanding protocol revenue and fee distribution)**
 
-FeeFlowController implements continuous Dutch auctions to sell accumulated protocol fees. It converts vault shares (from interest fees) into payment tokens for the DAO.
+FeeFlowController implements continuous Dutch auctions to sell accumulated protocol fees. It sells any assets it holds (typically vault shares from interest fees) in exchange for payment tokens sent to the DAO.
 
 **Incorrect: expecting direct fee claiming**
 
 ```solidity
-// WRONG: Fees are not claimed directly
+// WRONG: Fees are not claimed directly from vaults
 IEVault vault = IEVault(vaultAddress);
 vault.claimFees(); // This doesn't exist!
 ```
@@ -192,29 +150,30 @@ address feeReceiver = vault.feeReceiver();
 
 // convertFees() converts accumulated shares to the fee receiver
 // Anyone can call this to trigger the conversion
+// This must be called BEFORE buying from FeeFlowController
 vault.convertFees();
 ```
 
 **Correct: interacting with FeeFlowController**
 
 ```solidity
-import {FeeFlowControllerEVK} from "evk-periphery/FeeFlow/FeeFlowControllerEVK.sol";
+import {FeeFlowController} from "fee-flow/FeeFlowController.sol";
 
-FeeFlowControllerEVK feeFlow = FeeFlowControllerEVK(feeFlowAddress);
+FeeFlowController feeFlow = FeeFlowController(feeFlowAddress);
 
 // Get current auction state
-FeeFlowControllerEVK.Slot0 memory slot0 = feeFlow.getSlot0();
 uint256 currentPrice = feeFlow.getPrice();
+FeeFlowController.Slot0 memory slot0 = feeFlow.getSlot0();
 
 // Auction parameters (immutable)
-uint256 epochPeriod = feeFlow.epochPeriod();      // Auction duration
-uint256 priceMultiplier = feeFlow.priceMultiplier(); // Price scaling
-uint256 minInitPrice = feeFlow.minInitPrice();    // Minimum starting price
+uint256 epochPeriod = feeFlow.epochPeriod();         // Auction duration
+uint256 priceMultiplier = feeFlow.priceMultiplier(); // Price scaling (1.1e18 - 3e18)
+uint256 minInitPrice = feeFlow.minInitPrice();       // Minimum starting price
 
 // Payment token (what buyer pays)
 address paymentToken = address(feeFlow.paymentToken());
 
-// Payment receiver (where payment goes)
+// Payment receiver (where payment goes - DAO treasury)
 address paymentReceiver = feeFlow.paymentReceiver();
 ```
 
@@ -224,77 +183,48 @@ address paymentReceiver = feeFlow.paymentReceiver();
 import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
 
 // Dutch auction: price starts high and decreases over epoch
-// Anyone can buy all accumulated assets at current price
+// Anyone can buy all assets held by FeeFlowController at current price
 
-// Step 1: Check current price
+// Step 1: Ensure fees have been converted to FeeFlowController
+// (convertFees must be called on vaults separately)
+vault.convertFees();
+
+// Step 2: Check current price and epoch
+FeeFlowController.Slot0 memory slot0 = feeFlow.getSlot0();
 uint256 price = feeFlow.getPrice();
 
-// Step 2: Check available assets
+// Step 3: Specify which assets to receive (vault shares held by FeeFlowController)
 address[] memory assets = new address[](2);
-assets[0] = vault1ShareToken;  // Vault 1 shares
-assets[1] = vault2ShareToken;  // Vault 2 shares
+assets[0] = vault1Address;  // Vault 1 shares
+assets[1] = vault2Address;  // Vault 2 shares
 
-// Step 3: Approve payment token
+// Step 4: Approve payment token
 IERC20(paymentToken).approve(address(feeFlow), price);
 
-// Step 4: Buy all assets
-// This converts fees, transfers payment, and sends assets to buyer
+// Step 5: Buy all assets
+// Transfers payment to paymentReceiver, sends assets to buyer
 feeFlow.buy(
-    assets,           // Asset addresses to receive
-    msg.sender,       // Receiver of assets
-    slot0.epochId,    // Current epoch ID
+    assets,                    // Asset addresses to receive
+    msg.sender,                // Receiver of assets
+    slot0.epochId,             // Current epoch ID (prevents front-running)
     block.timestamp + 1 hours, // Deadline
-    price * 101 / 100 // Max payment (with 1% slippage)
+    price * 101 / 100          // Max payment (with 1% slippage)
 );
 ```
 
 **Key FeeFlow Concepts:**
 
-```typescript
-import { getContract, formatEther } from 'viem';
-
-const feeFlow = getContract({
-  address: feeFlowAddress,
-  abi: feeFlowABI,
-  client: publicClient,
-});
-
-// Get auction state
-const slot0 = await feeFlow.read.getSlot0();
-const currentPrice = await feeFlow.read.getPrice();
-const epochPeriod = await feeFlow.read.epochPeriod();
-
-console.log(`Current Epoch: ${slot0.epochId}`);
-console.log(`Current Price: ${formatEther(currentPrice)} tokens`);
-console.log(`Epoch Start: ${new Date(Number(slot0.startTime) * 1000)}`);
-
-// Calculate time remaining in epoch
-const elapsed = BigInt(Math.floor(Date.now() / 1000)) - slot0.startTime;
-const remaining = epochPeriod - elapsed;
-console.log(`Time Remaining: ${remaining} seconds`);
-
-// Price decreases linearly:
-// price = initPrice - (initPrice * timePassed / epochPeriod)
-// At epoch end, price = 0 (free!)
-```
-
-1. **Dutch Auction**: Price decreases linearly over epoch period
+1. **Dutch Auction**: Price decreases linearly over epoch period (price = initPrice - initPrice * timePassed / epochPeriod)
 
 2. **Epoch Reset**: After each buy, new auction starts with adjusted initial price
 
-3. **Price Adaptation**: Initial price adjusts based on settlement price (priceMultiplier)
+3. **Price Adaptation**: New initPrice = settlementPrice * priceMultiplier (clamped to min/max)
 
-4. **Atomic Operation**: Calls convertFees() on all vaults before transfer
+4. **Price at Epoch End**: If no one buys, price reaches 0 (assets are free)
 
-5. **Optional Hook**: Can trigger additional operations on each buy
+5. **Manual Fee Conversion**: `convertFees()` must be called on vaults separately before buying
 
-**TypeScript: Monitoring fee flow auctions:**
-
-**Cross-Chain Fee Collection:**
-
-FeeFlowControllerEVK supports bridging payment tokens to other chains via LayerZero OFT adapters, enabling unified treasury management across networks.
-
-Reference: [https://github.com/euler-xyz/evk-periphery/blob/master/src/FeeFlow/FeeFlowControllerEVK.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/FeeFlow/FeeFlowControllerEVK.sol)
+Reference: [https://github.com/euler-xyz/fee-flow/blob/master/src/FeeFlowController.sol](https://github.com/euler-xyz/fee-flow/blob/master/src/FeeFlowController.sol)
 
 ### 1.3 Flash Loans and Debt Transfer
 
@@ -320,32 +250,6 @@ contract BadFlashBorrower {
 ```
 
 **Correct: flash loan with proper repayment**
-
-```solidity
-import {IFlashLoan} from "evk/interfaces/IFlashLoan.sol";
-
-// Flash loans on Euler are FREE (no fee)
-// Must implement IFlashLoan interface and repay in same tx
-
-contract MyFlashBorrower is IFlashLoan {
-    function executeFlashLoan(address vault, uint256 amount) external {
-        // Request flash loan - vault transfers assets to this contract
-        IEVault(vault).flashLoan(amount, abi.encode(/* your data */));
-    }
-    
-    // Vault calls this after transferring assets
-    function onFlashLoan(bytes memory data) external override {
-        // Decode your data
-        // ... do arbitrage, liquidation, etc ...
-        
-        // MUST return assets to vault before function ends
-        // Vault checks: balanceOf(vault) >= originalBalance
-        IERC20(asset).transfer(msg.sender, amount);
-    }
-}
-```
-
-**Flash Loan for Liquidation:**
 
 ```typescript
 // Flash loans can also be done via EVC batch with borrow/repay
@@ -450,58 +354,6 @@ await evc.batch(batchItems);
 
 **Use Case: Account Migration:**
 
-**Touch - Force Interest Accrual:**
-
-```solidity
-// touch() forces interest accrual without any other operation
-// Useful for:
-// - Updating interest accumulator before queries
-// - Ensuring accurate debtOf/totalBorrows values
-// - MEV protection in some scenarios
-
-IEVault(vault).touch();
-
-// Now all debt-related queries reflect latest interest
-uint256 exactDebt = vault.debtOf(account);
-```
-
-**Borrowing View Functions:**
-
-```typescript
-const vault = getContract({
-  address: vaultAddress,
-  abi: evaultABI,
-  client: publicClient
-});
-
-// Vault state
-const totalBorrows = await vault.read.totalBorrows();
-const cash = await vault.read.cash();
-const totalAssets = await vault.read.totalAssets();
-
-// Utilization = totalBorrows / (totalBorrows + cash)
-const utilization = totalBorrows * 10000n / (totalBorrows + cash);
-
-// Interest rate (convert from per-second to APY)
-const ratePerSecond = await vault.read.interestRate();
-const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n;
-const RAY = 10n ** 27n;
-// Approximate APY: (1 + rate)^seconds - 1
-const borrowAPY = (ratePerSecond * SECONDS_PER_YEAR * 100n) / RAY;
-
-console.log(`Total Borrows: ${formatUnits(totalBorrows, 18)}`);
-console.log(`Cash: ${formatUnits(cash, 18)}`);
-console.log(`Utilization: ${utilization / 100n}%`);
-console.log(`Borrow APY: ~${borrowAPY}%`);
-
-// Account debt
-const myDebt = await vault.read.debtOf([myAccount]);
-const myDebtExact = await vault.read.debtOfExact([myAccount]);
-console.log(`My Debt: ${formatUnits(myDebt, 18)}`);
-```
-
-**TypeScript: Complete view function example:**
-
 Reference: [https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Borrowing.sol](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Borrowing.sol)
 
 ### 1.4 Vault Hooks and Use Cases
@@ -551,35 +403,6 @@ uint32 OP_VAULT_STATUS_CHECK = 1 << 14;  // checkVaultStatus
 
 // To enable all operations, disable all hooks:
 vault.setHookConfig(address(0), 0);
-```
-
-**Correct: implementing Pause Guardian**
-
-```solidity
-import {HookTargetGuardian} from "evk-periphery/HookTarget/HookTargetGuardian.sol";
-
-// Deploy pause guardian
-HookTargetGuardian guardian = new HookTargetGuardian(
-    admin,           // DEFAULT_ADMIN_ROLE holder
-    1 hours,         // PAUSE_DURATION: how long pause lasts
-    24 hours         // PAUSE_COOLDOWN: time before can pause again
-);
-
-// Grant guardian role to trusted address
-guardian.grantRole(guardian.GUARDIAN_ROLE(), guardianAddress);
-
-// Configure vault to use guardian for specific operations
-uint32 pausableOps = OP_DEPOSIT | OP_BORROW | OP_LIQUIDATE;
-vault.setHookConfig(address(guardian), pausableOps);
-
-// Guardian can now pause/unpause
-guardian.pause();    // All hooked operations will revert
-guardian.unpause();  // Operations resume
-
-// Check pause status
-bool isPaused = guardian.isPaused();
-uint256 remaining = guardian.remainingPauseDuration();
-bool canPause = guardian.canBePaused();
 ```
 
 **Correct: implementing Access Control**
@@ -677,8 +500,6 @@ const isDepositDisabled = operations.DEPOSIT && hookTarget === '0x00000000000000
 
 |-----------|---------|---------|
 
-| Pause Guardian | Emergency pause | Halt operations during incident |
-
 | Access Control | Permissioned vaults | KYC/AML compliance |
 
 | Rate Limiter | Prevent large movements | Limit deposit/withdraw per block |
@@ -687,7 +508,7 @@ const isDepositDisabled = operations.DEPOSIT && hookTarget === '0x00000000000000
 
 | Whitelist | Restrict interactions | Institutional-only vaults |
 
-Reference: [https://github.com/euler-xyz/evk-periphery/blob/master/src/HookTarget/HookTargetGuardian.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/HookTarget/HookTargetGuardian.sol), [https://github.com/euler-xyz/euler-vault-kit/blob/master/docs/whitepaper.md](https://github.com/euler-xyz/euler-vault-kit/blob/master/docs/whitepaper.md)
+[EVK Whitepaper - Hooks](https://github.com/euler-xyz/euler-vault-kit/blob/master/docs/whitepaper.md)
 
 ---
 

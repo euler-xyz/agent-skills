@@ -59,12 +59,12 @@ items[1] = IEVC.BatchItem({
     data: abi.encodeCall(IEVC.enableCollateral, (account, wbtcVault))
 });
 
-// Enable stETH vault as collateral
+// Enable wstETH vault as collateral
 items[2] = IEVC.BatchItem({
     onBehalfOfAccount: address(0),
     targetContract: address(evc),
     value: 0,
-    data: abi.encodeCall(IEVC.enableCollateral, (account, stethVault))
+    data: abi.encodeCall(IEVC.enableCollateral, (account, wstethVault))
 });
 
 IEVC(evc).batch(items);
@@ -84,25 +84,10 @@ address[] memory collaterals = IEVC(evc).getCollaterals(account);
 IEVC(evc).disableCollateral(account, vault);
 ```
 
-**Correct (reorder collaterals for gas optimization):**
-
-```solidity
-// Controllers loop through collaterals in order
-// Put highest-value collateral first for gas savings
-// reorderCollaterals swaps two collateral positions
-
-// Swap collateral at index 0 with collateral at index 2
-IEVC(evc).reorderCollaterals(account, 0, 2);
-
-// This moves the third collateral to first position
-// Multiple calls can be made to achieve desired ordering
-```
-
 Important considerations:
 - Collateral vault must be accepted by the borrow vault's LTV configuration
 - Each vault can have different LTV ratios (borrow LTV vs liquidation LTV)
 - Disabling collateral fails if it would make account unhealthy
 - Maximum 10 collaterals per account (SET_MAX_ELEMENTS)
-- Collateral order affects gas costs during health checks
 
 Reference: [EVC Whitepaper - Collateral Validity](https://github.com/euler-xyz/ethereum-vault-connector/blob/master/docs/whitepaper.md#collateral-validity)

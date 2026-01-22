@@ -1,6 +1,6 @@
 ---
 name: euler-irm-oracles
-description: Oracle and Interest Rate Model guide for Euler Finance V2. This skill should be used when deploying oracle adapters, configuring price resolution, querying prices, or understanding IRM types. Triggers on tasks involving Chainlink, Pyth, TWAP, price feeds, Linear Kink IRM, Adaptive Curve IRM, or interest rate configuration.
+description: Oracle and Interest Rate Model guide for Euler Finance V2. This skill should be used when deploying oracle adapters, configuring price resolution, querying prices, or understanding IRM types. Triggers on tasks involving Chainlink, Pyth, Chronicle, price feeds, Linear Kink IRM, Adaptive Curve IRM, or interest rate configuration.
 license: MIT
 metadata:
   author: Euler Labs
@@ -14,7 +14,7 @@ Oracle integration and Interest Rate Model guide for Euler Finance V2 protocol. 
 ## When to Apply
 
 Reference these guidelines when:
-- Deploying oracle adapters (Chainlink, Pyth, TWAP, Chronicle, RedStone)
+- Deploying oracle adapters (Chainlink, Pyth, Chronicle, RedStone)
 - Configuring EulerRouter for price resolution
 - Setting up cross-currency pricing with CrossAdapter
 - Querying asset prices from oracles
@@ -36,25 +36,23 @@ Reference these guidelines when:
 
 - **ChainlinkOracle** - For major pairs (ETH/USD, BTC/USD)
 - **PythOracle** - Pull-based, requires price updates before use
-- **UniswapV3Oracle** - TWAP for manipulation resistance
 - **ChronicleOracle** - MakerDAO ecosystem (requires whitelisting)
-- **RedStoneOracle** - Gas-optimized calldata-based pricing
 - **FixedRateOracle** - For stablecoins (1:1 rates)
 - **CrossAdapter** - Chain through intermediate assets
-- **LidoOracle / RateProviderOracle** - For LSTs
+- **LidoOracle** - For wstETH/stETH exchange rate
+- **RateProviderOracle** - For Balancer Rate Providers
 
 ### Interest Rate Models
 
-- **Linear Kink IRM** - Standard model with utilization-based rates
+- **Linear Kink IRM** - Standard two-slope model with utilization-based rates
+- **Linear Kinky IRM** - Non-linear acceleration after kink using shape parameter
 - **Adaptive Curve IRM** - Self-adjusting based on market conditions
 - **Fixed Cyclical Binary** - For binary rate transitions
-- **Base Premium IRM** - Uses underlying vault's rate as base
 
 ## Companion Skills
 
 - `euler-vaults` - Core vault operations, EVC, risk management
 - `euler-earn` - Yield aggregation vaults
-- `euler-swap` - AMM integration
 - `euler-advanced` - Hooks, flash loans, fee flow
 - `euler-data` - Lens contracts and data querying
 

@@ -13,8 +13,8 @@ Lens contracts provide read-only aggregated views of Euler protocol data. They s
 
 | Lens | Purpose |
 |------|---------|
-| AccountLens | Account positions, liquidity, health, time to liquidation |
-| VaultLens | Vault configuration, state, LTVs, rewards |
+| AccountLens | Account positions, liquidity, health, TTL |
+| VaultLens | Vault configuration, state, LTVs, IRM info |
 | OracleLens | Oracle configuration and validation |
 | IRMLens | Interest rate model parameters |
 | UtilsLens | APY calculations, token balances, price queries |
@@ -23,7 +23,7 @@ Lens contracts provide read-only aggregated views of Euler protocol data. They s
 **Incorrect (making many individual calls):**
 
 ```typescript
-// WRONG: Multiple calls, complex assembly, easy to miss data
+// WRONG: Multiple calls easy to miss data
 const totalAssets = await vault.read.totalAssets();
 const totalBorrows = await vault.read.totalBorrows();
 const cash = await vault.read.cash();
@@ -122,16 +122,88 @@ const health = liquidityInfo.liabilityValueLiquidation > 0n
 
 console.log(`Health Factor: ${formatUnits(health, 18)}`);
 
-// Time to liquidation (special values)
-const TTL_INFINITY = await accountLens.read.TTL_INFINITY();
-const TTL_LIQUIDATION = await accountLens.read.TTL_LIQUIDATION();
+// Time to liquidation (special int256 values)
+const TTL_INFINITY = (2n ** 255n) - 1n;        // type(int256).max - no debt or safe indefinitely
+const TTL_MORE_THAN_ONE_YEAR = (2n ** 255n) - 2n; // safe for at least one year
+const TTL_LIQUIDATION = -1n;                   // already liquidatable
+const TTL_ERROR = -2n;                         // computation error
 
-if (liquidityInfo.timeToLiquidation === TTL_INFINITY) {
-  console.log('Safe: Infinite time to liquidation');
-} else if (liquidityInfo.timeToLiquidation === TTL_LIQUIDATION) {
+const ttl = liquidityInfo.timeToLiquidation;
+if (ttl === TTL_INFINITY || ttl === TTL_MORE_THAN_ONE_YEAR) {
+  console.log('Safe: No liquidation risk');
+} else if (ttl === TTL_LIQUIDATION) {
   console.log('DANGER: Already liquidatable!');
-} else if (liquidityInfo.timeToLiquidation > 0) {
-  console.log(`Time to liquidation: ${liquidityInfo.timeToLiquidation} seconds`);
+} else if (ttl === TTL_ERROR) {
+  console.log('Error computing TTL');
+} else if (ttl > 0n) {
+  console.log(`Time to liquidation: ${ttl} seconds`);
+}
+```
+
+**Correct (using AccountLens for all EVC-enabled vaults):**
+
+```typescript
+// Get info for ALL vaults an account has enabled (collaterals + controllers)
+const multiVaultInfo = await accountLens.read.getAccountEnabledVaultsInfo([
+  evcAddress,
+  account
+]);
+
+// EVC state
+console.log(`Owner: ${multiVaultInfo.evcAccountInfo.owner}`);
+console.log(`Controllers: ${multiVaultInfo.evcAccountInfo.enabledControllers.length}`);
+console.log(`Collaterals: ${multiVaultInfo.evcAccountInfo.enabledCollaterals.length}`);
+
+// Position in each vault
+for (const vaultInfo of multiVaultInfo.vaultAccountInfo) {
+  console.log(`\nVault: ${vaultInfo.vault}`);
+  console.log(`  Deposited: ${vaultInfo.assets}`);
+  console.log(`  Borrowed: ${vaultInfo.borrowed}`);
+  console.log(`  Is Controller: ${vaultInfo.isController}`);
+  console.log(`  Is Collateral: ${vaultInfo.isCollateral}`);
+}
+```
+
+**Correct (using AccountLens with no-validation mode):**
+
+```typescript
+// getAccountLiquidityInfoNoValidation handles certain query failures gracefully
+// Useful for accounts without active debt or when vault is not a controller
+const liquidityInfo = await accountLens.read.getAccountLiquidityInfoNoValidation([
+  account,
+  vaultAddress
+]);
+
+// Returns zeroed values instead of failing for:
+// - E_TransientState (mid-batch checks)
+// - E_NoLiability (no debt)
+// - E_NotController (vault not enabled as controller)
+// - E_NoPriceOracle (oracle not configured)
+```
+
+**Correct (using AccountLens for on-chain reward info):**
+
+> **Note:** The balance tracking and reward-streams mechanism (`TrackingRewardStreams`) is embedded in the EVK but has seen limited adoption. Most Euler rewards are distributed via **off-chain mechanisms like [Merkl](https://merkl.xyz/)**. The on-chain reward-streams may not be supported in all UIs. Check the specific vault's reward distribution method before relying on this data.
+
+```typescript
+// On-chain reward info (legacy mechanism - limited adoption)
+// Most rewards are distributed off-chain via Merkl instead
+const accountInfo = await accountLens.read.getAccountInfo([account, vaultAddress]);
+const rewardInfo = accountInfo.accountRewardInfo;
+
+// balanceTracker will be address(0) if no on-chain rewards configured
+if (rewardInfo.balanceTracker !== zeroAddress) {
+  console.log(`Balance Tracker: ${rewardInfo.balanceTracker}`);
+  console.log(`Balance Forwarder Enabled: ${rewardInfo.balanceForwarderEnabled}`);
+  console.log(`Tracked Balance: ${rewardInfo.balance}`);
+
+  // Earned rewards (on-chain mechanism)
+  for (const reward of rewardInfo.enabledRewardsInfo) {
+    console.log(`\nReward Token: ${reward.reward}`);
+    console.log(`  Earned: ${reward.earnedReward}`);
+  }
+} else {
+  console.log('No on-chain rewards configured - check Merkl for off-chain rewards');
 }
 ```
 
@@ -191,23 +263,6 @@ const oracleInfo = await oracleLens.read.getOracleInfo([
 console.log(`Oracle: ${oracleInfo.name}`);
 console.log(`Oracle Address: ${oracleInfo.oracle}`);
 // oracleInfo.oracleInfo contains encoded adapter-specific info
-
-// Check for stale pull oracles (Pyth, RedStone)
-const isStale = await oracleLens.read.isStalePullOracle([
-  oracleAddress,
-  '0x' // failure reason bytes
-]);
-
-if (isStale) {
-  console.warn('Oracle prices are stale - update required!');
-}
-
-// Get valid oracle adapters for a pair
-const validAdapters = await oracleLens.read.getValidAdapters([
-  baseToken,
-  quoteToken
-]);
-console.log('Valid adapters:', validAdapters);
 ```
 
 **Correct (using UtilsLens for calculations):**
@@ -254,6 +309,52 @@ const ttl = await utilsLens.read.calculateTimeToLiquidation([
 ]);
 ```
 
+**Correct (using IRMLens for interest rate model details):**
+
+```typescript
+import irmLensABI from '@eulerxyz/euler-interfaces/abis/IRMLens.json';
+
+const irmLens = getContract({
+  address: lens.irmLens as Address,
+  abi: irmLensABI,
+  client: publicClient
+});
+
+// Get detailed IRM info including type and parameters
+const irmInfo = await irmLens.read.getInterestRateModelInfo([irmAddress]);
+
+console.log(`IRM Address: ${irmInfo.interestRateModel}`);
+console.log(`IRM Type: ${irmInfo.interestRateModelType}`);
+// Types: 0=UNKNOWN, 1=KINK, 2=ADAPTIVE_CURVE, 3=KINKY, 4=FIXED_CYCLICAL_BINARY
+
+// Decode params based on type
+if (irmInfo.interestRateModelType === 1) { // KINK
+  const params = decodeAbiParameters(
+    [{ type: 'tuple', components: [
+      { name: 'baseRate', type: 'uint256' },
+      { name: 'slope1', type: 'uint256' },
+      { name: 'slope2', type: 'uint256' },
+      { name: 'kink', type: 'uint256' }
+    ]}],
+    irmInfo.interestRateModelParams
+  )[0];
+  console.log(`Kink IRM: baseRate=${params.baseRate}, slope1=${params.slope1}, slope2=${params.slope2}, kink=${params.kink}`);
+} else if (irmInfo.interestRateModelType === 2) { // ADAPTIVE_CURVE
+  const params = decodeAbiParameters(
+    [{ type: 'tuple', components: [
+      { name: 'targetUtilization', type: 'int256' },
+      { name: 'initialRateAtTarget', type: 'int256' },
+      { name: 'minRateAtTarget', type: 'int256' },
+      { name: 'maxRateAtTarget', type: 'int256' },
+      { name: 'curveSteepness', type: 'int256' },
+      { name: 'adjustmentSpeed', type: 'int256' }
+    ]}],
+    irmInfo.interestRateModelParams
+  )[0];
+  console.log(`Adaptive Curve IRM: target=${params.targetUtilization}`);
+}
+```
+
 **Correct (using EulerEarnVaultLens for yield strategies):**
 
 ```typescript
@@ -294,65 +395,39 @@ const strategyInfo = await eulerEarnLens.read.getStrategyInfo([
 ]);
 ```
 
-**Solidity: Using Lens contracts on-chain:**
+**Important: Lens contracts are for off-chain queries only**
+
+Lens contracts are optimized for convenience, not gas efficiency. They aggregate multiple calls and return large structs, which is expensive on-chain. For on-chain integrations, call vault methods directly:
 
 ```solidity
-import {IVaultLens} from "euler-interfaces/interfaces/IVaultLens.sol";
-import {IAccountLens} from "euler-interfaces/interfaces/IAccountLens.sol";
+// DON'T use Lens on-chain - it's not gas efficient
+// IAccountLens(lens).getAccountLiquidityInfo(account, vault); // Expensive!
 
-contract MyContract {
-    IVaultLens public vaultLens;
-    IAccountLens public accountLens;
-    
-    constructor(address _vaultLens, address _accountLens) {
-        vaultLens = IVaultLens(_vaultLens);
-        accountLens = IAccountLens(_accountLens);
-    }
-    
-    function getAccountHealth(address account, address vault) 
-        external 
-        view 
-        returns (uint256 health) 
-    {
-        IAccountLens.AccountLiquidityInfo memory liq = 
-            accountLens.getAccountLiquidityInfo(account, vault);
-        
-        if (liq.queryFailure) revert("Query failed");
-        if (liq.liabilityValueLiquidation == 0) return type(uint256).max;
-        
-        health = (liq.collateralValueLiquidation * 1e18) / liq.liabilityValueLiquidation;
-    }
-    
-    function getVaultUtilization(address vault) 
-        external 
-        view 
-        returns (uint256 utilization) 
-    {
-        IVaultLens.VaultInfoDynamic memory info = 
-            vaultLens.getVaultInfoDynamic(vault);
-        
-        uint256 total = info.totalCash + info.totalBorrowed;
-        if (total == 0) return 0;
-        
-        utilization = (info.totalBorrowed * 1e18) / total;
-    }
-}
+// DO call vault methods directly for on-chain checks
+(uint256 collateralValue, uint256 liabilityValue) = IEVault(vault).accountLiquidity(account, true);
+bool isHealthy = collateralValue >= liabilityValue;
 ```
 
 **Key Lens Functions Summary:**
 
 | Lens | Function | Returns |
 |------|----------|---------|
+| AccountLens | `getAccountInfo(account, vault)` | Full account position + EVC state + rewards |
+| AccountLens | `getAccountEnabledVaultsInfo(evc, account)` | Info for ALL enabled vaults |
+| AccountLens | `getAccountLiquidityInfo(account, vault)` | Health, collateral values, TTL |
+| AccountLens | `getAccountLiquidityInfoNoValidation(account, vault)` | Same as above, handles errors gracefully |
+| AccountLens | `getTimeToLiquidation(account, vault)` | Seconds until liquidatable (int256) |
+| AccountLens | `getEVCAccountInfo(evc, account)` | EVC state: controllers, collaterals, lockdown |
+| AccountLens | `getVaultAccountInfo(account, vault)` | Position: shares, assets, borrowed, allowances |
+| AccountLens | `getRewardAccountInfo(account, vault)` | On-chain reward tracking (legacy, limited adoption) |
 | VaultLens | `getVaultInfoFull(vault)` | Complete vault config + state |
 | VaultLens | `getVaultInfoDynamic(vault)` | Current state only |
 | VaultLens | `getVaultInfoStatic(vault)` | Immutable config only |
 | VaultLens | `getRecognizedCollateralsLTVInfo(vault)` | LTV for all collaterals |
 | VaultLens | `getVaultKinkInterestRateModelInfo(vault)` | IRM curve data |
-| AccountLens | `getAccountInfo(account, vault)` | Full account position |
-| AccountLens | `getAccountLiquidityInfo(account, vault)` | Health and liquidation info |
-| AccountLens | `getTimeToLiquidation(account, vault)` | Seconds until liquidatable |
 | OracleLens | `getOracleInfo(oracle, bases, quotes)` | Oracle configuration |
 | OracleLens | `isStalePullOracle(oracle, reason)` | Check for stale Pyth/RedStone |
+| IRMLens | `getInterestRateModelInfo(irm)` | IRM type + decoded parameters |
 | UtilsLens | `getAPYs(vault)` | Current borrow/supply APY |
 | UtilsLens | `tokenBalances(account, tokens)` | Batch balance query |
 | EulerEarnLens | `getVaultInfoFull(vault)` | Earn vault with strategies |
