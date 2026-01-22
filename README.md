@@ -20,12 +20,6 @@ Oracle and Interest Rate Model guide. Covers deploying oracle adapters (Chainlin
 
 **Use when:** Deploying oracle adapters, configuring price feeds, understanding IRM types (Linear Kink, Adaptive Curve).
 
-### how-to-use-euler-swap
-
-EulerSwap AMM integration guide. Covers pool deployment, quotes, liquidity limits, and swap execution.
-
-**Use when:** Deploying EulerSwap pools, getting swap quotes, executing swaps, managing LP positions.
-
 ### interact-with-euler-earn
 
 EulerEarn yield aggregation guide. Covers vault creation, strategy management, roles, and PublicAllocator.
@@ -49,7 +43,7 @@ Developer tools and data access guide. Covers Lens contracts, subgraphs, contrac
 Install all skills:
 
 ```bash
-npx add-skill euler-xyz/agent-skills --skill how-to-use-euler-vaults --skill euler-interest-rate-models-and-oracles --skill how-to-use-euler-swap --skill interact-with-euler-earn --skill use-euler-feeflow-hooks-rewardEUL-flashloan --skill how-to-fetch-euler-data-lens
+npx add-skill euler-xyz/agent-skills --skill how-to-use-euler-vaults --skill euler-interest-rate-models-and-oracles --skill interact-with-euler-earn --skill use-euler-feeflow-hooks-rewardEUL-flashloan --skill how-to-fetch-euler-data-lens
 ```
 
 Install specific skill(s):
@@ -74,7 +68,6 @@ npx add-skill euler-xyz/agent-skills --list
 **Skill guide:**
 - `how-to-use-euler-vaults` - Core operations (start here)
 - `euler-interest-rate-models-and-oracles` - Oracle adapters and Interest Rate Models
-- `how-to-use-euler-swap` - EulerSwap AMM integration
 - `interact-with-euler-earn` - Yield aggregation vaults
 - `use-euler-feeflow-hooks-rewardEUL-flashloan` - Hooks, flash loans, fee flow, rewards
 - `how-to-fetch-euler-data-lens` - Lens contracts, subgraphs, developer tools
@@ -153,7 +146,6 @@ pnpm build-agents -- --skill=how-to-use-euler-vaults
 - [Ethereum Vault Connector](https://github.com/euler-xyz/ethereum-vault-connector)
 - [Euler Price Oracle](https://github.com/euler-xyz/euler-price-oracle)
 - [EulerEarn](https://github.com/euler-xyz/euler-earn)
-- [EulerSwap](https://github.com/euler-xyz/euler-swap)
 
 ## License
 

@@ -1,6 +1,6 @@
 ---
 name: use-euler-feeflow-hooks-rewardEUL-flashloan
-description: Advanced features guide for Euler Finance V2 protocol. This skill should be used when implementing vault hooks, flash loans, debt transfer, fee flow mechanics, or EUL rewards. Triggers on tasks involving hooks, pause guardians, access control, flash loans, pullDebt, FeeFlowController, or RewardToken.
+description: Advanced features guide for Euler Finance V2 protocol. This skill should be used when implementing vault hooks, flash loans, debt transfer, fee flow mechanics, or EUL rewards. Triggers on tasks involving hooks, access control, flash loans, pullDebt, FeeFlowController, or RewardToken.
 license: MIT
 metadata:
   author: Euler Labs
@@ -19,7 +19,7 @@ Reference these guidelines when:
 - Transferring debt between accounts with pullDebt
 - Understanding fee flow and Dutch auctions
 - Working with locked EUL reward tokens
-- Implementing pause guardians or access control
+- Implementing access control hooks
 
 ## Rule Categories
 
@@ -45,7 +45,6 @@ Reference these guidelines when:
 - `how-to-use-euler-vaults` - Core vault operations, EVC, risk management
 - `euler-interest-rate-models-and-oracles` - Oracle adapters and interest rate models
 - `interact-with-euler-earn` - Yield aggregation vaults
-- `how-to-use-euler-swap` - AMM integration
 - `how-to-fetch-euler-data-lens` - Lens contracts and data querying
 
 ## How to Use

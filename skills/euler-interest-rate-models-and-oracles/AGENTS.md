@@ -13,7 +13,7 @@ January 2026
 
 ## Abstract
 
-Oracle and Interest Rate Model guide for Euler Finance V2 protocol. Covers deploying oracle adapters (Chainlink, Pyth, Chronicle, RedStone), configuring EulerRouter for price resolution, querying asset prices, and understanding IRM types (Linear Kink, Adaptive Curve, Fixed Cyclical Binary, Base Premium).
+Oracle and Interest Rate Model guide for Euler Finance V2 protocol. Covers deploying oracle adapters (Chainlink, Pyth, Chronicle, RedStone), configuring EulerRouter for price resolution, querying asset prices, and understanding IRM types (Linear Kink, Linear Kinky IRM, Adaptive Curve, Fixed Cyclical Binary).
 
 ---
 

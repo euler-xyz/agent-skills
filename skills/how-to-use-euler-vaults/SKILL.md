@@ -15,7 +15,6 @@ Core guide for interacting with Euler Finance V2 protocol. Contains rules across
 
 For specialized topics, use these companion skills:
 - **euler-interest-rate-models-and-oracles** - Oracle adapters, EulerRouter, price resolution, Interest Rate Models
-- **how-to-use-euler-swap** - EulerSwap AMM pools, quotes, liquidity
 - **interact-with-euler-earn** - EulerEarn yield aggregation, strategies
 - **use-euler-feeflow-hooks-rewardEUL-flashloan** - Hooks, flash loans, fee flow, rewards
 - **how-to-fetch-euler-data-lens** - Lens contracts, subgraphs, contract interfaces, developer tools

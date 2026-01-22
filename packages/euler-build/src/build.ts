@@ -42,7 +42,6 @@ function generateMarkdown(
   const titleMap: Record<SkillName, string> = {
     'how-to-use-euler-vaults': 'Euler Finance Agent Skill',
     'euler-interest-rate-models-and-oracles': 'Euler IRM & Oracles Agent Skill',
-    'how-to-use-euler-swap': 'EulerSwap Agent Skill',
     'interact-with-euler-earn': 'EulerEarn Agent Skill',
     'use-euler-feeflow-hooks-rewardEUL-flashloan': 'Euler Advanced Features Agent Skill',
     'how-to-fetch-euler-data-lens': 'Euler Lens & Data Agent Skill',
@@ -56,7 +55,6 @@ function generateMarkdown(
 >
 > For specialized topics, see companion skills:
 > - \`euler-interest-rate-models-and-oracles\` - Oracle adapters, price resolution, Interest Rate Models
-> - \`how-to-use-euler-swap\` - EulerSwap AMM integration
 > - \`interact-with-euler-earn\` - EulerEarn yield aggregation
 > - \`use-euler-feeflow-hooks-rewardEUL-flashloan\` - Hooks, flash loans, fee flow, rewards
 > - \`how-to-fetch-euler-data-lens\` - Lens contracts, subgraphs, developer tools`,
@@ -64,9 +62,6 @@ function generateMarkdown(
 > This document is for agents and LLMs to follow when working with  
 > Euler Finance price oracles and Interest Rate Models. It covers deploying  
 > adapters, configuring EulerRouter, querying prices, and understanding IRM types.`,
-    'how-to-use-euler-swap': `> **Note:**  
-> This document is for agents and LLMs to follow when interacting with  
-> EulerSwap AMM. It covers pool deployment, quotes, liquidity limits, and swap execution.`,
     'interact-with-euler-earn': `> **Note:**  
 > This document is for agents and LLMs to follow when interacting with  
 > EulerEarn yield aggregation. It covers vault creation, strategy management,  

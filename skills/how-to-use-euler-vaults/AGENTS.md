@@ -11,7 +11,6 @@ January 2026
 >
 > For specialized topics, see companion skills:
 > - `euler-interest-rate-models-and-oracles` - Oracle adapters, price resolution, Interest Rate Models
-> - `how-to-use-euler-swap` - EulerSwap AMM integration
 > - `interact-with-euler-earn` - EulerEarn yield aggregation
 > - `use-euler-feeflow-hooks-rewardEUL-flashloan` - Hooks, flash loans, fee flow, rewards
 > - `how-to-fetch-euler-data-lens` - Lens contracts, subgraphs, developer tools
@@ -20,7 +19,7 @@ January 2026
 
 ## Abstract
 
-Core guide for interacting with Euler Finance V2 protocol. Covers vault operations (deposit, borrow, repay), EVC orchestration (batching, sub-accounts, operators), risk management (health factors, liquidation), architecture concepts (vault types, market design), interest rate models, security practices, and developer tools. For specialized topics, see companion skills: euler-interest-rate-models-and-oracles, how-to-use-euler-swap, interact-with-euler-earn, use-euler-feeflow-hooks-rewardEUL-flashloan.
+Core guide for interacting with Euler Finance V2 protocol. Covers vault operations (deposit, borrow, repay), EVC orchestration (batching, sub-accounts, operators), risk management (health factors, liquidation), architecture concepts (vault types, market design), interest rate models, security practices, and developer tools. For specialized topics, see companion skills: euler-interest-rate-models-and-oracles, interact-with-euler-earn, use-euler-feeflow-hooks-rewardEUL-flashloan.
 
 ---
 

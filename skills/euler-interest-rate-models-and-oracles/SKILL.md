@@ -53,7 +53,6 @@ Reference these guidelines when:
 
 - `how-to-use-euler-vaults` - Core vault operations, EVC, risk management
 - `interact-with-euler-earn` - Yield aggregation vaults
-- `how-to-use-euler-swap` - AMM integration
 - `use-euler-feeflow-hooks-rewardEUL-flashloan` - Hooks, flash loans, fee flow
 - `how-to-fetch-euler-data-lens` - Lens contracts and data querying
 

@@ -51,7 +51,6 @@ Reference these guidelines when:
 
 - `how-to-use-euler-vaults` - Core vault operations, EVC, risk management
 - `euler-interest-rate-models-and-oracles` - Oracle adapters and interest rate models
-- `how-to-use-euler-swap` - AMM integration
 - `use-euler-feeflow-hooks-rewardEUL-flashloan` - Hooks, flash loans, fee flow
 - `how-to-fetch-euler-data-lens` - Lens contracts and data querying
 

@@ -53,7 +53,6 @@ The subgraph is intentionally minimal - use Lens contracts for detailed data:
 - `how-to-use-euler-vaults` - Core vault operations, EVC, risk management
 - `euler-interest-rate-models-and-oracles` - Oracle adapters and interest rate models
 - `interact-with-euler-earn` - Yield aggregation vaults
-- `how-to-use-euler-swap` - AMM integration
 - `use-euler-feeflow-hooks-rewardEUL-flashloan` - Hooks, flash loans, fee flow
 
 ## How to Use
