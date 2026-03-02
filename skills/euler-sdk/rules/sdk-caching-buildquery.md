@@ -30,7 +30,7 @@ const buildQuery: BuildQueryFn = (queryName, fn) => {
 
 Recommended stale-time strategy:
 
-- `Infinity`: deployments, ABI, token list, static labels
+- hours (e.g. 12-24h): deployments, ABI, token list, static labels
 - minutes: perspectives, providers, reward campaign catalogs
 - 10-30s: vault/account/wallet state
 - ~10s: swap quotes and Pyth update payloads

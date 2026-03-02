@@ -84,7 +84,7 @@ Decorate SDK `query*` methods via `buildQuery` (e.g., with React Query).
 
 Use per-query stale times:
 
-- `Infinity` or minutes: deployments, ABIs, token lists, static labels
+- hours (e.g. 12-24h): deployments, ABIs, token lists, static labels
 - minutes: perspectives/providers/reward catalogs
 - 10-30s: account/vault/wallet state
 - ~10s: swap quotes and Pyth update payloads
