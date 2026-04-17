@@ -1,10 +1,10 @@
 ---
 name: euler-sdk
-description: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. This skill should be used when implementing apps on top of the `euler-v2-sdk` package, including account/vault reads, transaction planning, approval handling, simulation, swaps, plugins, and query caching. Triggers on tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `executionService`, `simulationService`, `swapService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples`.
+description: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. This skill should be used when implementing apps on top of the `euler-v2-sdk` package, including account/vault reads, transaction planning, approval handling, simulation, swaps, plugins, and query caching. Triggers on tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `executionService`, `simulationService`, `swapService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.0.0"
+  version: "1.1.1"
 ---
 
 # Euler SDK Agent Skill
@@ -44,6 +44,9 @@ Reference these guidelines when:
 - `executionService` for `planX`/`encodeX` and approvals
 - `simulationService` for pre-execution validation
 - `swapService` for provider quotes and route payloads
+- `rewardsService` for reward reads and provider-specific claim plans
+
+Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and use `errors`/`entityId` for UI diagnostics.
 
 ### Preferred UI Pattern
 

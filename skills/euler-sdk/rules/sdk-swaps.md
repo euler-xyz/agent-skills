@@ -12,7 +12,9 @@ Use `swapService` as the first step for any swap-driven action, then feed select
 **Correct flow:**
 
 ```typescript
-const quotes = await sdk.swapService.getRepayQuotes({
+import { SwapperMode } from "euler-v2-sdk";
+
+const quotes = await sdk.swapService.fetchRepayQuotes({
   chainId,
   fromVault,
   fromAsset,
@@ -23,6 +25,7 @@ const quotes = await sdk.swapService.getRepayQuotes({
   currentDebt,
   toAccount,
   origin,
+  swapperMode: SwapperMode.TARGET_DEBT,
   slippage: 0.5,
 });
 
@@ -36,7 +39,7 @@ Rules:
 
 1. Always re-quote close to execution time.
 2. Validate quote-provider assumptions (quotes are best-first, but still simulate).
-3. For full debt repay, set `liabilityAmount` to `currentDebt` with `TARGET_DEBT` mode.
+3. For full debt repay, set `liabilityAmount` to `currentDebt` with `SwapperMode.TARGET_DEBT`.
 4. Compare providers when building professional routing UIs.
 
 Reference: `packages/euler-v2-sdk/docs/swaps.md`, `examples/execution/repay-with-swap-example.ts`, `examples/execution/swap-debt-example.ts`

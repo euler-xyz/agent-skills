@@ -1,7 +1,7 @@
 # Euler SDK Agent Skill
 
-**Version 1.0.0**  
-Euler Labs  
+**Version 1.1.1**
+Euler Labs
 March 2026
 
 ---
@@ -30,10 +30,14 @@ Use `buildEulerSDK` as the composition root and route reads through top-level se
 - `accountService` for account/sub-account state
 - `vaultMetaService` for mixed or unknown vault types
 - `executionService` for planning/encoding tx batches
+  - executes generic `TransactionPlan` items, including direct `contractCall` items
 - `simulationService` for pre-trade validation
 - `swapService` for quotes and providers
+- `oracleAdapterService` for oracle adapter metadata (provider/methodology/checks)
+- `rewardsService` for reward reads and provider-specific reward claim planning
 
 Do not assume all vaults are `EVault`. Use `vaultMetaService` for polymorphic routing.
+Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and use `errors`/`entityId` for UI diagnostics.
 
 ### 1.2 UI Data Population Contract
 
@@ -46,6 +50,15 @@ Computed account metrics depend on populated data. For portfolio screens, set:
 
 Without these flags, metrics like `healthFactor`, `netAssetValueUsd`, and `roe` may be missing or incomplete.
 
+For batch vault reads (`fetchVaults`, `fetchVerifiedVaults`), results preserve input order and can include `undefined` entries for per-vault failures; use diagnostics `entityId` to map failures to addresses.
+
+Use entity `populated` flags to verify enrichment state in UI logic:
+
+- `account.populated.vaults | marketPrices | userRewards`
+- `vault.populated.marketPrices | rewards | intrinsicApy | labels`
+- `eVault.populated.collaterals`
+- `eulerEarn.populated.strategyVaults`
+
 ---
 
 ## 2. Execution Safety
@@ -56,10 +69,11 @@ Prefer `planX` APIs over `encodeX` for user-facing transaction flows. Resolve re
 
 Execution order:
 
-1. Build plan (`planDeposit`, `planBorrow`, `planRepayWithSwap`, etc.)
-2. Resolve approvals (`approve` or Permit2 signature path)
-3. Send `evcBatch` transaction(s)
-4. Wait for receipts and refresh UI state
+1. Build plan (`planDeposit`, `planBorrow`, `planRepayWithSwap`, etc.) or reward claim plan in `rewardsService`
+2. Resolve approvals with `resolveRequiredApprovals({ chainId, account, plan })`, or use `resolveRequiredApprovalsWithWallet({ chainId, wallet, plan })` when wallet data was already fetched
+3. Execute `contractCall` items directly when present
+4. Send `evcBatch` transaction(s)
+5. Wait for receipts and refresh UI state
 
 Use `mergePlans` to atomically combine user intents and `describeBatch` for previews.
 
@@ -86,10 +100,12 @@ Use per-query stale times:
 
 - hours (e.g. 12-24h): deployments, ABIs, token lists, static labels
 - minutes: perspectives/providers/reward catalogs
+- minutes: bundled intrinsic APY lookups such as `queryV3IntrinsicApy`
 - 10-30s: account/vault/wallet state
 - ~10s: swap quotes and Pyth update payloads
 
 This keeps repeated service-level `fetch*` calls inexpensive.
+By default, `buildEulerSDK` applies a 5s in-memory cache to decorated `query*` methods. Supplying a custom `buildQuery` replaces that default cache layer.
 
 ### 3.2 Plugins for Preconditions
 
@@ -108,7 +124,7 @@ Keep plugin ordering deterministic. Use shared caching decorators for plugin que
 
 Pattern:
 
-1. fetch quotes (`getDepositQuote`, `getRepayQuotes`)
+1. fetch quotes (`fetchDepositQuote`, `fetchRepayQuotes`)
 2. pick quote (best-first ordering)
 3. build plan (`planRepayWithSwap`, `planSwapCollateral`, `planSwapDebt`, `planMultiplyWithSwap`)
 4. simulate
@@ -120,10 +136,10 @@ Re-quote near submission time and compare providers for advanced routing UIs.
 
 Use SDK examples as templates:
 
-- `examples/execution/*` for transaction flows
-- `examples/simulations/*` for pre-checks
-- `examples/utils/executor.ts` for approval + Permit2 + EVC logic
-- `run-examples.sh` for fork-based regression runs
+- `packages/euler-v2-sdk/examples/execution/*` for transaction flows
+- `packages/euler-v2-sdk/examples/simulations/*` for pre-checks
+- `packages/euler-v2-sdk/examples/utils/executor.ts` for approval + Permit2 + EVC logic
+- `packages/euler-v2-sdk/examples/run-examples.sh` for fork-based regression runs
 
 Promote constants to config/env and add explicit chain/account flags in CLI tools.
 
@@ -134,11 +150,12 @@ Promote constants to config/env and add explicit chain/account flags in CLI tool
 - `packages/euler-v2-sdk/README.md`
 - `packages/euler-v2-sdk/docs/basic-usage.md`
 - `packages/euler-v2-sdk/docs/services.md`
+- `packages/euler-v2-sdk/docs/entity-diagnostics.md`
 - `packages/euler-v2-sdk/docs/execution-service.md`
 - `packages/euler-v2-sdk/docs/simulations-and-state-overrides.md`
 - `packages/euler-v2-sdk/docs/caching-external-data-queries.md`
 - `packages/euler-v2-sdk/docs/plugins.md`
 - `packages/euler-v2-sdk/docs/swaps.md`
-- `react-sdk-example/src/context/SdkContext.tsx`
-- `react-sdk-example/src/queries/sdkQueries.ts`
-- `react-sdk-example/src/utils/txExecutor.ts`
+- `packages/euler-v2-sdk/examples/react-sdk-example/src/context/SdkContext.tsx`
+- `packages/euler-v2-sdk/examples/react-sdk-example/src/queries/sdkQueries.ts`
+- `packages/euler-v2-sdk/examples/react-sdk-example/src/utils/txExecutor.ts`
