@@ -8,6 +8,7 @@ tags: sdk, architecture, services, buildEulerSDK, vaultMetaService
 ## SDK Architecture and Service Boundaries
 
 Initialize the SDK once, treat services as layered APIs, and pick the right service boundary for each task.
+The package is now published as stable `euler-v2-sdk` 1.0.0; prefer the current package docs and examples over older beta-era assumptions.
 
 **Incorrect (using typed vault service when vault type is unknown):**
 
@@ -34,24 +35,33 @@ if (!vault) throw new Error(errors[0]?.message ?? "Vault could not be resolved")
 ```typescript
 import { buildEulerSDK } from "euler-v2-sdk";
 
+// Set EULER_SDK_RPC_URL_<chainId> in the environment for on-chain reads.
 const sdk = await buildEulerSDK({
-  rpcUrls: {
-    1: process.env.MAINNET_RPC!,
-    8453: process.env.BASE_RPC!,
+  config: {
+    v3ApiUrl: process.env.EULER_SDK_V3_API_URL,
+    v3ApiKey: process.env.EULER_SDK_V3_API_KEY,
   },
 });
 ```
+
+Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SDK_*` env var, then default. Use `packages/euler-v2-sdk/docs/config-through-env.md` when adding runtime config.
 
 Use these default boundaries:
 
 - `accountService`: account/sub-account portfolio state
 - `vaultMetaService`: mixed/unknown vault types
+- `walletService`: native/ERC20 wallet balances and direct/Permit2 allowance state
 - `executionService`: `planX`/`encodeX`, approvals, batch encoding
-- `simulationService`: plan validation and post-state preview
+- `executionService`: transaction planning, execution, plan validation, and post-state preview
 - `swapService`: quotes and providers
-- `rewardsService`: reward reads and provider-specific claim planning
-- `oracleAdapterService`: oracle adapter metadata (provider/methodology/checks)
+- `rewardsService`: reward reads and provider-specific claim planning for Merkl, Brevis/Incentra, and Fuul
+- `reulLockService`: rEUL vesting lock reads and unlock transaction plans
+- `eulerLabelsService`: normalized off-chain labels metadata; use exported helpers from `utils/eulerLabels` for product/vault flags, notices, restrictions, deprecation, and recently-added markers
+- `oracleAdapterService`: oracle adapter metadata keyed by normalized `adapter.oracle` address
 
 All service `fetch*` methods return `{ result, errors }`; keep diagnostics with the fetched entity when rendering warnings or enforcing data-quality policy.
+For oracle metadata UIs, do not read removed `vault.oracle.adapters` / `debtPricingOracleAdapters` projections. Selected routes live on `vault.debtPricingOracleRoute` and `collaterals[].oracleRoute`; use `getOracleRouteAdapters(route)` or `getOracleRouteResolvedVaults(route)` when a consumer needs adapter/vault projections.
 
-Reference: `packages/euler-v2-sdk/docs/services.md`, `packages/euler-v2-sdk/docs/entity-diagnostics.md`, `docs/data-architecture.md`, `src/sdk/buildSDK.ts`
+For reward claim UIs, keep provider-specific proof/payload work inside `rewardsService.buildClaimPlan(s)`. V3 reward reads delegate Brevis and Fuul claim helper reads to the direct adapter, and `fetchFuulTotals(address, chainId?)` / `fetchFuulClaimChecks(address, chainId?)` can derive public Fuul claimable rewards when caller-hosted Fuul totals/check endpoints are not configured.
+
+Reference: `packages/euler-v2-sdk/docs/services.md`, `packages/euler-v2-sdk/docs/config-through-env.md`, `packages/euler-v2-sdk/docs/wallet-service.md`, `packages/euler-v2-sdk/docs/reul-lock-service.md`, `packages/euler-v2-sdk/docs/rewards-service.md`, `packages/euler-v2-sdk/docs/entity-diagnostics.md`, `docs/data-architecture.md`, `src/sdk/buildSDK.ts`

@@ -18,6 +18,7 @@ export const SKILL_NAMES = [
   'euler-earn',
   'euler-advanced',
   'euler-data',
+  'euler-sdk',
 ] as const
 
 export type SkillName = (typeof SKILL_NAMES)[number]

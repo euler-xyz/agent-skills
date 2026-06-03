@@ -45,6 +45,7 @@ function generateMarkdown(
     'euler-earn': 'EulerEarn Agent Skill',
     'euler-advanced': 'Euler Advanced Features Agent Skill',
     'euler-data': 'Euler Lens & Data Agent Skill',
+    'euler-sdk': 'Euler SDK Agent Skill',
   }
 
   const noteMap: Record<SkillName, string> = {
@@ -73,6 +74,11 @@ function generateMarkdown(
 > This document is for agents and LLMs to follow when querying Euler data  
 > or using developer tools. It covers Lens contracts, subgraphs, contract  
 > interfaces, and no-code vault deployment.`,
+    'euler-sdk': `> **Note:**  
+> This document is for agents and LLMs to follow when integrating with  
+> the Euler V2 SDK. It covers service boundaries, entity population,  
+> transaction planning, approvals, simulation, caching, plugins, fallbacks,  
+> swap flows, and scripts.`,
   }
 
   let md = `# ${titleMap[skillName]}\n\n`

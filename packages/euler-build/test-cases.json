@@ -1060,5 +1060,158 @@
     "code": "import { request, gql } from 'graphql-request';\n\n// Get current endpoint from docs.euler.finance\n// Deployed via Goldsky\nconst SUBGRAPH_URL = 'https://api.goldsky.com/...';\n\n// Get address prefix (first 19 bytes)\nfunction getAddressPrefix(account: string): string {\n  return ('0x' + account.slice(2, 40)).toLowerCase();\n}\n\n// Check which factory created a vault\nasync function getVaultFactory(vaultAddress: string): Promise<string | null> {\n  const query = gql`\n    query GetVaultFactory($id: Bytes!) {\n      vault(id: $id) {\n        factory\n      }\n    }\n  `;\n  \n  const result = await request(SUBGRAPH_URL, query, { \n    id: vaultAddress.toLowerCase() \n  });\n  \n  return result.vault?.factory ?? null;\n}\n\n// Get all active positions for an account (including sub-accounts)\nasync function getAccountPositions(account: string) {\n  const prefix = getAddressPrefix(account);\n  \n  const query = gql`\n    query GetPositions($prefix: Bytes!) {\n      trackingVaultBalances(where: { addressPrefix: $prefix }) {\n        vault\n        account\n        balance\n        debt\n        blockTimestamp\n      }\n    }\n  `;\n  \n  return request(SUBGRAPH_URL, query, { prefix });\n}\n\n// Check if an account has any active positions\nasync function isAccountActive(account: string): Promise<boolean> {\n  const prefix = getAddressPrefix(account);\n  \n  const query = gql`\n    query CheckActive($prefix: Bytes!) {\n      trackingActiveAccount(id: $prefix) {\n        deposits\n        borrows\n      }\n    }\n  `;\n  \n  const result = await request(SUBGRAPH_URL, query, { prefix });\n  const active = result.trackingActiveAccount;\n  \n  return active && (active.deposits.length > 0 || active.borrows.length > 0);\n}",
     "language": "typescript",
     "description": "querying account vault balances - amounts are updated at the time of last interaction"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "SDK Architecture and Service Boundaries",
+    "type": "bad",
+    "code": "// WRONG: Fails for non-EVault addresses\nconst vault = await sdk.eVaultService.fetchVault(chainId, maybeAnyVault);",
+    "language": "typescript",
+    "description": "using typed vault service when vault type is unknown"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "SDK Architecture and Service Boundaries",
+    "type": "good",
+    "code": "const { result: vault, errors } = await sdk.vaultMetaService.fetchVault(chainId, maybeAnyVault, {\n  populateMarketPrices: true,\n  populateRewards: true,\n  populateIntrinsicApy: true,\n  populateLabels: true,\n});\n\nif (!vault) throw new Error(errors[0]?.message ?? \"Vault could not be resolved\");",
+    "language": "typescript",
+    "description": "route by type with vaultMetaService"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "SDK Architecture and Service Boundaries",
+    "type": "good",
+    "code": "import { buildEulerSDK } from \"euler-v2-sdk\";\n\n// Set EULER_SDK_RPC_URL_<chainId> in the environment for on-chain reads.\nconst sdk = await buildEulerSDK({\n  config: {\n    v3ApiUrl: process.env.EULER_SDK_V3_API_URL,\n    v3ApiKey: process.env.EULER_SDK_V3_API_KEY,\n  },\n});",
+    "language": "typescript",
+    "description": "single composition root"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Query Decoration and Caching with buildQuery",
+    "type": "good",
+    "code": "import { QueryClient } from \"@tanstack/react-query\";\nimport type { BuildQueryFn } from \"euler-v2-sdk\";\n\nconst queryClient = new QueryClient();\n\nconst buildQuery: BuildQueryFn = (queryName, fn, _target) => {\n  const staleTime = queryName.startsWith(\"querySwap\") ? 10_000 : 60_000;\n  return ((...args: unknown[]) =>\n    queryClient.fetchQuery({\n      queryKey: [\"sdk\", queryName, ...args],\n      queryFn: () => fn(...args),\n      staleTime,\n    })) as typeof fn;\n};",
+    "language": "typescript",
+    "description": "Correct pattern example for Query Decoration and Caching with buildQuery"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Transaction Planning, Approvals, and EVC Batch Execution",
+    "type": "bad",
+    "code": "const batchItems = sdk.executionService.encodeDeposit({ ...args });\n// WRONG: no approval resolution; tx may revert on allowance",
+    "language": "typescript",
+    "description": "encoding raw calls but skipping approvals"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Transaction Planning, Approvals, and EVC Batch Execution",
+    "type": "good",
+    "code": "const plan = sdk.executionService.planDeposit({\n  account,\n  vault,\n  asset,\n  amount,\n  receiver,\n  enableCollateral: true,\n});\n\nconst resolved = await sdk.executionService.resolveRequiredApprovals({\n  chainId,\n  account: owner,\n  plan,\n});\n\n// Execute required approvals first, then handle each executable item:\n// - contractCall: send directly\n// - evcBatch: send through EVC.batch",
+    "language": "typescript",
+    "description": "plan + resolve + execute"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Fallback Adapter for V3 / Onchain Routing",
+    "type": "bad",
+    "code": "// WRONG: Treats per-collateral oracle warnings as a fallback trigger.\nconst wrapped = createFallbackAdapter(primary, secondary, {\n  methods: [\"fetchVaults\"],\n  adapterNames: { primary: \"v3\", secondary: \"onchain\" },\n  shouldFallback: (r) => r.errors.some((e) => e.code === \"SOURCE_UNAVAILABLE\"),\n});",
+    "language": "typescript",
+    "description": "over-eager fallback inferred from any SOURCE_UNAVAILABLE"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Fallback Adapter for V3 / Onchain Routing",
+    "type": "good",
+    "code": "const wrapped = createFallbackAdapter(primary, secondary, {\n  methods: [\"fetchVaults\"],\n  adapterNames: { primary: \"v3\", secondary: \"onchain\" },\n});\n// Default falls back ONLY when:\n// - primary throws,\n// - ServiceResult.result is undefined, or\n// - result is an array containing at least one undefined slot.",
+    "language": "typescript",
+    "description": "rely on the default trigger logic"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Fallback Adapter for V3 / Onchain Routing",
+    "type": "good",
+    "code": "const sdk = await buildEulerSDK({\n  config: {\n    v3ApiUrl: process.env.EULER_SDK_V3_API_URL,\n    v3ApiKey: process.env.EULER_SDK_V3_API_KEY,\n    eVaultServiceAdapter: \"fallback\",     // default when both adapters are buildable\n    accountServiceAdapter: \"v3\",          // pin to V3 only\n    rewardsServiceAdapter: \"direct\",      // pin to direct (no V3 calls)\n    disableV3: process.env.ENV === \"ci\",  // global kill switch for V3 across all chains\n  },\n});",
+    "language": "typescript",
+    "description": "route by service-level config in buildEulerSDK"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Fallback Adapter for V3 / Onchain Routing",
+    "type": "good",
+    "code": "import { buildEulerSDK, type FallbackInfo } from \"@eulerxyz/euler-v2-sdk\";\n\nconst sdk = await buildEulerSDK({\n  onFallback: (info: FallbackInfo) => {\n    // info.trigger distinguishes the real cause:\n    //   \"primary-threw\" | \"result-undefined\" | \"array-missing-slots\"\n    //   | \"custom-shouldFallback\" | \"circuit-open\"\n    // info.missingIndices is populated for \"array-missing-slots\".\n    metrics.increment(\"sdk.fallback\", {\n      method: info.method,\n      adapter: info.primaryName,\n      trigger: info.trigger,\n    });\n  },\n});",
+    "language": "typescript",
+    "description": "observe fallback events via telemetry"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Fallback Adapter for V3 / Onchain Routing",
+    "type": "good",
+    "code": "import { createFallbackAdapter } from \"@eulerxyz/euler-v2-sdk\";\n\nconst wrapped = createFallbackAdapter<MyAdapter, \"fetchThings\">(primary, secondary, {\n  methods: [\"fetchThings\"],\n  adapterNames: { primary: \"v3\", secondary: \"onchain\" },\n  // Trip the circuit after 3 consecutive primary failures, skip primary for 30s.\n  circuitBreaker: { failures: 3, cooldownMs: 30_000 },\n  onFallback: (info) => console.log(\"fallback\", info.method, info.trigger),\n});",
+    "language": "typescript",
+    "description": "custom fallback for a non-built-in adapter"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Plugin Integration for Read and Write Preconditions",
+    "type": "good",
+    "code": "import { buildEulerSDK, createPythPlugin, createKeyringPlugin } from \"euler-v2-sdk\";\n\nconst sdk = await buildEulerSDK({\n  plugins: [\n    createPythPlugin(),\n    createKeyringPlugin({\n      hookTargets,\n      getCredentialData: async (args) => fetchCredential(args),\n    }),\n  ],\n});",
+    "language": "typescript",
+    "description": "Correct initialization with plugin support example for Plugin Integration for Read and Write Preconditions"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Script and Tooling Workflows from SDK Examples",
+    "type": "good",
+    "code": "import { buildEulerSDK, type Address } from \"@eulerxyz/euler-v2-sdk\";\n\nconst sdk = await buildEulerSDK({\n  config: {\n    rpcUrls: { [chainId]: process.env[`EULER_SDK_RPC_URL_${chainId}`] },\n    v3ApiKey: process.env.EULER_SDK_V3_API_KEY,\n  },\n});\n\nconst { result: account } = await sdk.accountService.fetchAccount({\n  chainId,\n  account: owner as Address,\n  populateVaults: true,\n  populateMarketPrices: true,\n});\n\nconst plan = await sdk.executionService.planDeposit({\n  chainId,\n  account,\n  vault: vault as Address,\n  amount,\n});\n\nconst simulation = await sdk.executionService.simulateTransactionPlan({\n  chainId,\n  account,\n  plan,\n});\n\nif (!simulation.canExecute) {\n  throw new Error(\"Deposit plan failed simulation\");\n}\n\nawait sdk.executionService.executeTransactionPlan({\n  chainId,\n  account,\n  plan,\n});",
+    "language": "typescript",
+    "description": "Correct example for Script and Tooling Workflows from SDK Examples"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Pre-Execution Simulation and Safety Gates",
+    "type": "good",
+    "code": "const result = await sdk.executionService.simulateTransactionPlan(\n  chainId,\n  ownerOrAccount,\n  plan,\n  {\n    stateOverrides: true,\n    accountFetchOptions: {\n      populateVaults: true,\n      populateMarketPrices: true,\n      populateUserRewards: true,\n      vaultFetchOptions: {\n        populateMarketPrices: true,\n        populateRewards: true,\n        populateIntrinsicApy: true,\n      },\n    },\n  },\n);\n\nif (!result.canExecute) {\n  throw new Error(\"Simulation failed safety checks\");\n}",
+    "language": "typescript",
+    "description": "Correct simulation flow example for Pre-Execution Simulation and Safety Gates"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "Swap Quotes and Swap-Driven Execution Flows",
+    "type": "good",
+    "code": "import { SwapperMode } from \"euler-v2-sdk\";\n\nconst quotes = await sdk.swapService.fetchRepayQuotes({\n  chainId,\n  fromVault,\n  fromAsset,\n  fromAccount,\n  liabilityVault,\n  liabilityAsset,\n  liabilityAmount,\n  currentDebt,\n  toAccount,\n  origin,\n  swapperMode: SwapperMode.TARGET_DEBT,\n  slippage: 0.5,\n});\n\nconst plan = sdk.executionService.planRepayWithSwap({\n  account,\n  swapQuote: quotes[0]!,\n});",
+    "language": "typescript",
+    "description": "Correct flow example for Swap Quotes and Swap-Driven Execution Flows"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "UI Data Layer with Fetch Options and Population",
+    "type": "bad",
+    "code": "const { result: account } = await sdk.accountService.fetchAccount(chainId, owner, {\n  populateVaults: false,\n});\n\nconsole.log(account.getSubAccount(owner)?.netValueUsd); // undefined",
+    "language": "typescript",
+    "description": "expecting computed USD/risk metrics without population"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "",
+    "ruleTitle": "UI Data Layer with Fetch Options and Population",
+    "type": "good",
+    "code": "if (!account.populated.marketPrices) return null;\nif (!account.populated.vaults) return null;",
+    "language": "typescript",
+    "description": "declare population requirements"
   }
 ]

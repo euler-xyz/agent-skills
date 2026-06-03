@@ -16,7 +16,7 @@ const { result: account } = await sdk.accountService.fetchAccount(chainId, owner
   populateVaults: false,
 });
 
-console.log(account.netAssetValueUsd); // undefined
+console.log(account.getSubAccount(owner)?.netValueUsd); // undefined
 ```
 
 **Correct (declare population requirements):**
@@ -46,12 +46,23 @@ if (!account.populated.vaults) return null;
 
 Keep `errors` alongside the entity snapshot. Diagnostics are not entity state; use them for field-level badges, telemetry, and policy decisions.
 
+APY/ROE values on SDK vault and portfolio entities are percentage points (`5` = `5%`). Raw reward campaign APRs are decimal fractions; convert them before adding them to vault APYs in custom UI code, or use the SDK's computed breakdown fields.
+
+Vault rewards are exposed as a `VaultRewardInfo` whose `getTotalRewardsApr({ viewer })` / `getActiveCampaigns({ viewer })` apply Merkl-style whitelist/blacklist eligibility — the plain `totalRewardsApr` getter stays headline (no viewer). Portfolio, per-position, and sub-account views mirror this: headline `netApy`/`roe`/`apyBreakdown`/`roeBreakdown` getters vs viewer-aware `getNetApy/getRoe/getApyBreakdown/getRoeBreakdown({ viewer })`. Pass the connected address as `viewer` once a wallet is connected so gated campaigns don't inflate displayed APY. These breakdowns also pick up `BORROW_COLLATERAL` and `LOOPING` reward campaigns.
+
+USD market price and value fields (`marketPriceUsd`, `suppliedValueUsd`, `borrowedValueUsd`, `totalRewardsValueUsd`, portfolio USD totals) are plain `number` values. Direct oracle/risk fields such as `oraclePriceRaw`, `assetRiskPrice`, `healthFactor`, and LTV ratios remain `bigint`.
+Account portfolio computations report zero LTV for debt positions that have no enabled collateral; treat that as "no collateral backing this debt", not as a missing value.
+
+Labels use "recently added" markers instead of the removed "featured" flag. Use `label.recentlyAdded`, `recentlyAddedVaults`, `recentlyAddedEarnVaults`, or `isEulerLabelVaultRecentlyAdded(labelsData, vaultAddress)` depending on whether you are working with an attached label object or raw labels data.
+
+EVault oracle payloads expose only selected routes: `vault.debtPricingOracleRoute` for asset-to-unit-of-account debt pricing and `collaterals[].oracleRoute` for collateral pricing. `vault.oracle` is only the root oracle identity (`oracle`, `name`). Use the ordered `route.steps` as the primary display surface; call `getOracleRouteAdapters(route)` / `getOracleRouteResolvedVaults(route)` only when you need derived projections.
+
 For React UIs:
 
 1. Build SDK in a provider/context once.
 2. Use query hooks per feature (`vault list`, `vault detail`, `account`, `rewards`).
 3. Use short UI stale times and let `buildQuery` handle deeper caching.
 4. Re-fetch account/vault data after successful execution receipts.
-5. For batch vault calls, handle sparse arrays (`undefined` entries) and map diagnostics by `entityId` to show per-address failures.
+5. For batch vault calls, handle sparse arrays (`undefined` entries) and map diagnostics by `locations[].owner` to show per-address failures.
 
-Reference: `packages/euler-v2-sdk/docs/basic-usage.md`, `docs/cross-service-data-population.md`, `docs/account-computed-properties.md`, `docs/entity-diagnostics.md`, `examples/react-sdk-example/src/queries/sdkQueries.ts`
+Reference: `packages/euler-v2-sdk/docs/basic-usage.md`, `packages/euler-v2-sdk/docs/entities/evault.md`, `packages/euler-v2-sdk/docs/labels.md`, `docs/cross-service-data-population.md`, `docs/account-computed-properties.md`, `docs/entity-diagnostics.md`, `examples/react-sdk-example/src/queries/sdkQueries.ts`

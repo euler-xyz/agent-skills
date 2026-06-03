@@ -1,10 +1,10 @@
 ---
 name: euler-sdk
-description: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. This skill should be used when implementing apps on top of the `euler-v2-sdk` package, including account/vault reads, transaction planning, approval handling, simulation, swaps, plugins, and query caching. Triggers on tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `executionService`, `simulationService`, `swapService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
+description: Euler V2 SDK integration guide for building production UIs, bots, scripts, and tooling. This skill should be used when implementing apps on top of the `euler-v2-sdk` package, including account/vault/wallet reads, transaction planning, approval handling, simulation, swaps, rEUL locks, rewards claims, oracle routes, labels, plugins, and query caching. Triggers on tasks involving `buildEulerSDK`, SDK services (`accountService`, `vaultMetaService`, `walletService`, `executionService`, `swapService`, `reulLockService`), React Query integration, or SDK examples in `packages/euler-v2-sdk/examples/`.
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.1.1"
+  version: "1.2.1"
 ---
 
 # Euler SDK Agent Skill
@@ -31,6 +31,7 @@ Reference these guidelines when:
 | `sdk-simulation-safety` | CRITICAL | Simulate plans before sending and gate execution on checks |
 | `sdk-caching-buildquery` | HIGH | Wrap all `query*` calls via `buildQuery` with per-query stale times |
 | `sdk-plugins` | HIGH | Use plugins for oracle/keyring preconditions on read and write paths |
+| `sdk-fallback-adapter` | HIGH | Configure V3 → onchain/subgraph/direct fallback chains and observe `onFallback` telemetry |
 | `sdk-swaps` | HIGH | Quote, select, and execute swap-driven operations safely |
 | `sdk-scripts` | MEDIUM | Use SDK examples as templates for scripts, bots, and CI checks |
 
@@ -39,14 +40,21 @@ Reference these guidelines when:
 ### Core SDK Entry Points
 
 - `buildEulerSDK({...})` as composition root
+- `buildEulerSDK({ config: {...} })` for SDK-owned runtime config; `config` overrides explicit options, `EULER_SDK_*` env vars, and defaults
 - `accountService` for account/sub-account positions
 - `vaultMetaService` when vault type is unknown or mixed
+- `walletService` for native/ERC20 wallet balances and direct/Permit2 allowance state
 - `executionService` for `planX`/`encodeX` and approvals
-- `simulationService` for pre-execution validation
-- `swapService` for provider quotes and route payloads
-- `rewardsService` for reward reads and provider-specific claim plans
+- `executionService` for plugin-aware plan simulation, gas estimation, execution, and pre-execution validation; CoW plans execute through `executeCowSwapTransactionPlan`, expose order status/cancellation helpers, and are not simulation/gas-estimation inputs
+- `swapService` for provider quotes and route payloads, including `cowSwap` metadata for CoW-supported position flows
+- `rewardsService` for reward reads and provider-specific claim plans; V3 delegates Brevis/Fuul claim helper reads to the direct adapter, and Fuul public claimable rewards are used when caller-hosted totals/claim-check endpoints are unset
+- `reulLockService` for rEUL vesting lock reads and unlock transaction plans
+- `eulerLabelsService` plus exported `utils/eulerLabels` helpers for normalized labels metadata, notices, restrictions, and recently-added/deprecated product/vault flags
+- `oracleAdapterService.fetchOracleAdapterMap(chainId)` returns metadata keyed by normalized `adapter.oracle` address; derive adapters from `getOracleRouteAdapters(vault.debtPricingOracleRoute)` or `getOracleRouteAdapters(collateral.oracleRoute)`
 
-Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and use `errors`/`entityId` for UI diagnostics.
+Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). Destructure `result` in examples and map `errors[].locations[]` by owner reference for UI diagnostics.
+
+Built-in scalar config resolves as `config` prop, explicit SDK option, `EULER_SDK_*` env var, then default. RPC URLs can come from `config.rpcUrls` or `EULER_SDK_RPC_URL_<chainId>`. Reference `packages/euler-v2-sdk/docs/config-through-env.md` for the env/config field list.
 
 ### Preferred UI Pattern
 
@@ -55,6 +63,8 @@ Service `fetch*` methods return diagnostics envelopes (`{ result, errors }`). De
 3. Use service-level `fetch*` methods in hooks for reactive UI.
 4. Set population flags explicitly (`populateMarketPrices`, `populateRewards`, etc.).
 5. Simulate `TransactionPlan` before execution when user risk is non-trivial.
+
+CoW swap plans are an exception to the simulation step: build them from CoW quotes with the CoW-specific planners and execute them through `executeCowSwapTransactionPlan`, then track returned `orderUids` with `fetchCowSwapOrderStatus` or `pollCowSwapOrderStatus`. Use `cancelCowSwapOrder` for open-position/collateral-swap CoW orders and `planCancelClosePositionWithCow` for close-position CoW orders that cancel by invalidating the EVC permit nonce.
 
 ## Companion Skills
 
@@ -75,6 +85,7 @@ rules/sdk-execution-flow.md
 rules/sdk-simulation-safety.md
 rules/sdk-caching-buildquery.md
 rules/sdk-plugins.md
+rules/sdk-fallback-adapter.md
 rules/sdk-swaps.md
 rules/sdk-scripts.md
 ```

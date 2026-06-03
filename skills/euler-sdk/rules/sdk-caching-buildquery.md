@@ -35,9 +35,12 @@ Recommended stale-time strategy:
 - minutes: perspectives, providers, reward campaign catalogs
 - minutes: external intrinsic APY queries such as `queryV3IntrinsicApy`
 - 10-30s: vault/account/wallet state
+- ~5s: transaction-sensitive wallet reads such as `queryNativeBalance`, `queryTokenBalances`, `queryAllowance`, and `queryPermit2Allowance`
 - ~10s: swap quotes and Pyth update payloads
+- minutes: Fuul totals / claim checks / claimable rewards for reward claim UIs
 
 This keeps service-level `fetch*` orchestration cheap because underlying `query*` calls are cached.
 By default, `buildEulerSDK` applies a 5s in-memory cache to decorated `query*` methods. Supplying a custom `buildQuery` replaces that default cache layer, so include caching/deduping there if the app needs it.
+Oracle route ABI decoding is memoized inside the SDK; avoid adding app-level caches around pure oracle-route helpers unless profiling shows a real UI bottleneck.
 
 Reference: `packages/euler-v2-sdk/docs/caching-external-data-queries.md`, `examples/react-sdk-example/src/queries/sdkQueries.ts`

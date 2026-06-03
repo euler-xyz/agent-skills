@@ -9,6 +9,7 @@ tags: execution, planX, approvals, permit2, evc
 
 Prefer `planX` over `encodeX` for app flows. `planX` includes required approvals and context-driven execution decisions.
 For reward claims, use `rewardsService.buildClaimPlan(s)` instead of adding provider-specific claim logic to `executionService`.
+Reward claim planning resolves Merkl, Brevis, and Fuul provider payloads lazily at plan-build time; Fuul claim checks are fetched with the target `chainId`, and selecting a Fuul reward claims all currently claimable Fuul checks for that account on that chain.
 
 **Incorrect (encoding raw calls but skipping approvals):**
 
@@ -43,12 +44,22 @@ const resolved = await sdk.executionService.resolveRequiredApprovals({
 Execution checklist:
 
 1. Build plan with `planX`.
-2. Resolve approvals with `resolveRequiredApprovals({ chainId, account, plan })`, or use `resolveRequiredApprovalsWithWallet({ chainId, wallet, plan })` when wallet data was already fetched.
-3. Execute `contractCall` items directly when present.
-4. Encode/send EVC batch (`executionService.encodeBatch`) for `evcBatch` items.
-5. Wait for receipt and refetch dependent queries.
-6. Decode contract errors for user-facing diagnostics.
+2. Pass the plan to `sdk.executionService.executeTransactionPlan(...)`; it applies configured plugins before resolving approvals and sending transactions.
+3. Use `onProgress` to surface approval, Permit2 signature, direct call, EVC batch, CoW signing/submission, and completion states.
+4. Wait for the returned receipts and refetch dependent queries.
+5. Decode contract errors for user-facing diagnostics.
 
-Use `mergePlans` to atomically combine multiple intents and `describeBatch` for previews/logging.
+CoW swap plans are built with `planOpenPositionWithCoW`, `planClosePositionWithCow`, or `planSwapCollateralWithCoW`. They are executed through `executeCowSwapTransactionPlan`, return `orderUids`, and settle asynchronously through CoW Protocol. Track order state with `fetchCowSwapOrderStatus` or `pollCowSwapOrderStatus`. Cancel open-position and collateral-swap orders with `cancelCowSwapOrder`; cancel close-position orders with `planCancelClosePositionWithCow`, which invalidates the signed EVC permit nonce. Use `formatCowSwapExecutionErrorMessage` for short UI-safe errors. Do not pass CoW plans to simulation, gas estimation, `mergePlans`, or `describeBatch`.
 
-Reference: `packages/euler-v2-sdk/docs/execution-service.md`, `packages/euler-v2-sdk/src/services/executionService/executionService.ts`, `examples/utils/executor.ts`, `examples/react-sdk-example/src/utils/txExecutor.ts`
+`executeTransactionPlan`, `simulateTransactionPlan`, and `estimateGasForTransactionPlan` accept `AddressOrAccount` (`Address | Account`) for the account argument. Pass an `Account` when the caller already has account state that plugins can reuse; pass an address when plugin-side minimal fetching is preferable.
+
+When the same plan is both simulated (for a Review preview) and then executed (on Confirm), call `prepareTransactionPlan({ plan, chainId, account, usePermit2?, unlimitedApproval? })` once and pass the returned `TransactionPlanPrepared` envelope to `simulatePreparedTransactionPlan(prepared, options?)` and `executePreparedTransactionPlan({ prepared, sendTransaction, signTypedData, onProgress })`. The prepared variants skip the internal plugin pipeline (and approval re-resolution for execute), so plugin reads — TOS, Keyring, Pyth — run once per Review instead of three times. Use `isPreparedTransactionPlan` to discriminate envelope vs raw plan. CoW plans are not supported by `prepareTransactionPlan`.
+
+Borrow and leverage planners (`planBorrow`, `planSwapAndBorrowFromWallet`, `planMultiplyWithSwap`, `planMultiplySameAsset`) automatically prepend cleanup that disables stale enabled collaterals/controllers on the target sub-account before borrowing; pass `skipCleanup: true` to opt out when you manage EVC state yourself. `planCleanup` builds that batch standalone. Full-repay `cleanupOnMax` only sweeps collateral shares for EVK vaults (non-EVK collaterals like Securitize RWA are disabled but not transferred, since they lack `transferFromMax`).
+
+Full-debt `debtMax` swap quotes with verifier amount `0` are treated as max repay during planning so controller cleanup can run even when the current debt comparison alone cannot prove the swap output covers the position. Approval state overrides now try `eth_createAccessList` discovery before sequential ERC20 slot probing for unknown allowance layouts; keep caller-supplied slot hints when available, but do not add per-token workarounds before checking the SDK helper path.
+
+Use `mergePlans` to atomically combine multiple intents and `describeBatch` for previews/logging. `mergePlans` collapses redundant EVC state transitions across merged batches (e.g. a cleanup `disableCollateral` cancels a borrow `enableCollateral`), so merging a `planCleanup` plan with a borrow plan yields a minimal batch.
+Planner-created `evcBatch` entries contain named operations (`{ type: "operation", name, items }`). Keep those groups intact in previews and merge flows. Raw `EVCBatchItem` entries are still valid for low-level utilities and plugin-inserted setup calls. Use `convertBatchItemsToPlan(items, operationName)` when a raw encoded batch should be named as one operation; omit `operationName` to preserve the raw item array.
+
+Reference: `packages/euler-v2-sdk/docs/execution-service.md`, `packages/euler-v2-sdk/docs/rewards-service.md`, `packages/euler-v2-sdk/docs/cow-swaps.md`, `packages/euler-v2-sdk/src/services/executionService/executionService.ts`, `examples/react-sdk-example/src/utils/txProgress.ts`

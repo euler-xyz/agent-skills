@@ -38,12 +38,18 @@ Developer tools and data access guide. Covers Lens contracts, subgraphs, contrac
 
 **Use when:** Querying vault data, fetching historical data, looking up addresses/ABIs, using Euler Creator.
 
+### euler-sdk
+
+Euler V2 SDK integration guide. Covers SDK services, UI data layers, transaction planning, approvals, simulation, plugins, fallback adapters, swaps, rEUL locks, and script examples.
+
+**Use when:** Building apps, bots, scripts, or tooling on top of `euler-v2-sdk`, including `buildEulerSDK`, account/vault/wallet reads, execution flows, and React Query integration.
+
 ## Installation
 
 Install all skills:
 
 ```bash
-npx add-skill euler-xyz/agent-skills --skill euler-vaults --skill euler-irm-oracles --skill euler-earn --skill euler-advanced --skill euler-data
+npx add-skill euler-xyz/agent-skills --skill euler-vaults --skill euler-irm-oracles --skill euler-earn --skill euler-advanced --skill euler-data --skill euler-sdk
 ```
 
 Install specific skill(s):
@@ -71,6 +77,7 @@ npx add-skill euler-xyz/agent-skills --list
 - `euler-earn` - Yield aggregation vaults
 - `euler-advanced` - Hooks, flash loans, fee flow, rewards
 - `euler-data` - Lens contracts, subgraphs, developer tools
+- `euler-sdk` - SDK integration, services, execution, caching, plugins, fallbacks, swaps
 
 Or clone the repository directly:
 
@@ -102,6 +109,10 @@ Deploy a Chainlink oracle adapter
 
 ```
 Create an EulerEarn yield aggregation vault
+```
+
+```
+Build a deposit flow with euler-v2-sdk
 ```
 
 ## Skill Structure
@@ -146,6 +157,7 @@ pnpm build-agents -- --skill=euler-vaults
 - [Ethereum Vault Connector](https://github.com/euler-xyz/ethereum-vault-connector)
 - [Euler Price Oracle](https://github.com/euler-xyz/euler-price-oracle)
 - [EulerEarn](https://github.com/euler-xyz/euler-earn)
+- [Euler SDKs](https://github.com/euler-xyz/euler-sdks)
 
 ## License
 

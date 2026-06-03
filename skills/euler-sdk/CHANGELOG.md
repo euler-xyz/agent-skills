@@ -2,6 +2,22 @@
 
 All notable changes to the `euler-sdk` skill are documented in this file.
 
+## 1.2.1 - 2026-06-03
+- Indexed SDK changes after the 1.2.0 skill snapshot, including stable `euler-v2-sdk` 1.0.0 release notes.
+- Added current oracle-route guidance for `debtPricingOracleRoute`, `collaterals[].oracleRoute`, `getOracleRouteAdapters`, and route-step based Pyth collection.
+- Replaced stale "featured" labels language with `recentlyAdded` / `isEulerLabelVaultRecentlyAdded` guidance.
+- Clarified reward claim planning for V3 delegated Brevis/Fuul helper reads and Fuul public claimable rewards when caller-hosted Fuul endpoints are unset.
+- Clarified full-debt `debtMax` swap planning and access-list-first approval override discovery.
+
+## 1.2.0 - 2026-05-19
+- Added `sdk-fallback-adapter` rule covering V3 → onchain/subgraph/direct fallback chains, default trigger semantics, `onFallback` telemetry (`FallbackInfo.trigger`, `missingIndices`), and custom `createFallbackAdapter` composition.
+- Expanded `AGENTS.md` section 3 (Runtime Performance) with `3.3 Fallback Adapter for V3 / Onchain Routing`.
+- New reference doc: `packages/euler-v2-sdk/docs/fallback-system.md`.
+
+## 1.1.2 - 2026-05-07
+- Added `walletService` guidance for native/ERC20 balances and direct/Permit2 allowance state.
+- Added wallet query caching guidance and wallet example references.
+
 ## 1.1.1 - 2026-04-16
 - Aligned examples with diagnostics-aware service returns (`{ result, errors }`).
 - Updated approval resolution guidance to the current `plan`/`account` API shape.
