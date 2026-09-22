@@ -139,7 +139,49 @@ Keep `errors` alongside the entity snapshot. Diagnostics are not entity state; u
 
 APY/ROE values on SDK vault and portfolio entities are percentage points (`5` = `5%`). Raw reward campaign APRs are decimal fractions; convert them before adding them to vault APYs in custom UI code, or use the SDK's computed breakdown fields.
 
-Vault rewards are exposed as a `VaultRewardInfo` whose `getTotalRewardsApr({ viewer })` / `getActiveCampaigns({ viewer })` apply Merkl-style whitelist/blacklist eligibility — the plain `totalRewardsApr` getter stays headline (no viewer). Portfolio, per-position, and sub-account views mirror this: headline `netApy`/`roe`/`apyBreakdown`/`roeBreakdown` getters vs viewer-aware `getNetApy/getRoe/getApyBreakdown/getRoeBreakdown({ viewer })`. Pass the connected address as `viewer` once a wallet is connected so gated campaigns don't inflate displayed APY. These breakdowns also pick up `BORROW_COLLATERAL` and `LOOPING` reward campaigns.
+Vault rewards are exposed as a `VaultRewardInfo` whose `getTotalRewardsApr({ viewer })` / `getActiveCampaigns({ viewer })` apply Merkl-style whitelist/blacklist eligibility. The plain `totalRewardsApr` getter returns headline rewards without a viewer. Pass the connected address as `viewer` so gated campaigns don't inflate displayed APY; yield breakdowns also include `BORROW_COLLATERAL` and `LOOPING` reward campaigns.
+
+The viewer-aware method names depend on the entity:
+
+| Entity | Viewer-aware yield methods |
+|--------|----------------------------|
+| `Portfolio` | `getNetApy({ viewer })`, `getRoe({ viewer })`, `getNetApyBreakdown({ viewer })`, `getRoeBreakdown({ viewer })` |
+| `PortfolioSavingsPosition` | `getApyBreakdown({ viewer })` |
+| `PortfolioBorrowPosition` | `getApyBreakdown({ viewer })`, `getRoeBreakdown({ viewer })` |
+| `SubAccount` | `getRoe({ viewer })` returns a structured ROE breakdown |
+
+Portfolio's `netApy`, `roe`, `apyBreakdown`, and `roeBreakdown` getters return the headline values without viewer filtering. Position breakdown getters follow the same headline convention.
+
+**Correct (fetch viewer-aware portfolio and position yields):**
+
+<!-- checked-example: sdk-portfolio-yields -->
+```typescript
+import type { EulerSDK } from '@eulerxyz/euler-v2-sdk';
+import type { Address } from 'viem';
+
+export async function fetchViewerYields(
+  sdk: EulerSDK,
+  chainId: number,
+  owner: Address,
+  viewer: Address,
+) {
+  const { result: portfolio, errors } = await sdk.portfolioService.fetchPortfolio(chainId, owner);
+  if (!portfolio) throw new Error(errors[0]?.message ?? 'Portfolio unavailable');
+
+  return {
+    errors,
+    netApy: portfolio.getNetApy({ viewer }),
+    roe: portfolio.getRoe({ viewer }),
+    apyBreakdown: portfolio.getNetApyBreakdown({ viewer }),
+    roeBreakdown: portfolio.getRoeBreakdown({ viewer }),
+    savings: portfolio.savings.map(position => position.getApyBreakdown({ viewer })),
+    borrows: portfolio.borrows.map(position => ({
+      apyBreakdown: position.getApyBreakdown({ viewer }),
+      roeBreakdown: position.getRoeBreakdown({ viewer }),
+    })),
+  };
+}
+```
 
 USD market price and value fields (`marketPriceUsd`, `suppliedValueUsd`, `borrowedValueUsd`, `totalRewardsValueUsd`, portfolio USD totals) are plain `number` values. Direct oracle/risk fields such as `oraclePriceRaw`, `assetRiskPrice`, `healthFactor`, and LTV ratios remain `bigint`.
 
@@ -147,8 +189,8 @@ USD market price and value fields (`marketPriceUsd`, `suppliedValueUsd`, `borrow
 
 For position-first UIs (savings/borrows lists, net-worth headers), use
 `portfolioService` instead of hand-rolling over sub-accounts. `fetchPortfolio(chainId, owner)`
-fetches the backing account with `populateAll: true` and returns a `Portfolio`;
-`buildPortfolio(account)` wraps an already-populated account. It exposes `.savings`,
+fetches the backing account with `populateAll: true` and returns a diagnostics envelope
+`{ result: portfolio, errors }`; `buildPortfolio(account)` directly wraps an already-populated account. It exposes `.savings`,
 `.borrows`, and computed totals (`netAssetValueUsd`, `netApy`, `roe`,
 `totalRewardsValueUsd`), plus `positionFilter` and `getNextSubAccount(...)`. Use
 `Account` for contract-shaped data; use `Portfolio` for the opinionated view. The
@@ -286,9 +328,41 @@ If simulation fails, decode and surface actionable messages rather than raw reve
 For UI fan-outs that simulate N candidate plans per user action (swap-quote sweeps, leverage explorers), avoid blowing up RPC + Hermes traffic:
 
 - Pass `stateOverrideOptions` (`SimulationStateOverrideOptions`) to skip overrides the form already validated: `noBalanceOverride: true` when the form gates submit on wallet balance, `wallet.balances`/`wallet.allowances` from the snapshot the form already holds, and `slotHints` pre-fetched once per token with `fetchErc20SlotHints(provider, token, { allowanceSpender })`.
-- Compute `prefetch` once per sweep with `executionService.prefetchPluginDataForPlan(plan, account, chainId)` and thread it through every `prepareTransactionPlan` / `simulatePreparedTransactionPlan` / `estimateGasForPreparedTransactionPlan` / `executePreparedTransactionPlan` call. The Pyth / Keyring plugin work happens once instead of N times.
+- Fetch plugin data with `executionService.prefetchPluginDataForPlan(plan, account, chainId)` and pass `prefetch` into `prepareTransactionPlan`. Pass the returned prepared plan to `simulatePreparedTransactionPlan`, `estimateGasForPreparedTransactionPlan`, and `executePreparedTransactionPlan`. These downstream APIs reuse the prepared plan without rerunning plugins and do not accept a `prefetch` option.
 
-These options are additive and degrade gracefully — omit them and the SDK falls back to full derivation + per-call plugin fetch.
+**Correct (prefetch during preparation and reuse the prepared plan):**
+
+<!-- checked-example: sdk-prepared-prefetch -->
+```typescript
+import type {
+  AddressOrAccount,
+  EulerSDK,
+  ExecutePreparedTransactionPlanArgs,
+  TransactionPlan,
+} from '@eulerxyz/euler-v2-sdk';
+
+export async function executeWithPrefetch(
+  sdk: EulerSDK,
+  chainId: number,
+  account: AddressOrAccount,
+  plan: TransactionPlan,
+  wallet: Pick<ExecutePreparedTransactionPlanArgs, 'sendTransaction' | 'signTypedData'>,
+) {
+  const prefetch = await sdk.executionService.prefetchPluginDataForPlan(plan, account, chainId);
+  const prepared = await sdk.executionService.prepareTransactionPlan({
+    plan, chainId, account, prefetch,
+    usePermit2: true,
+    unlimitedApproval: false,
+  });
+  const simulation = await sdk.executionService.simulatePreparedTransactionPlan(prepared);
+  if (!simulation.canExecute) throw new Error('Prepared plan simulation failed');
+  const estimatedGas = await sdk.executionService.estimateGasForPreparedTransactionPlan(prepared);
+  const execution = await sdk.executionService.executePreparedTransactionPlan({ prepared, ...wallet });
+  return { estimatedGas, execution };
+}
+```
+
+The unprepared `simulateTransactionPlan` and `estimateGasForTransactionPlan` APIs accept `prefetch` in their options because they run plugin processing themselves. Without explicit `prefetch`, preparation resolves plugin data through the normal plugin path. Reuse shared data across candidate preparations only when it covers their chain, account, and plugin requirements; refresh and prepare again when those inputs change or oracle updates expire. Applications with an accepted transaction review should follow the materialized execution flow in the execution rule.
 
 Reference: [packages/euler-v2-sdk/docs/simulations-and-state-overrides.md](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/docs/simulations-and-state-overrides.md), [docs/execution-service.md](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/docs/execution-service.md), [docs/decode-smart-contract-errors.md](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/docs/decode-smart-contract-errors.md), [examples/simulations/simulate-deposit-example.ts](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/examples/simulations/simulate-deposit-example.ts)
 

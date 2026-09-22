@@ -577,6 +577,15 @@
   },
   {
     "skill": "euler-sdk",
+    "ruleId": "sdk-ui-data-layer",
+    "ruleTitle": "UI Data Layer with Fetch Options and Population",
+    "type": "good",
+    "code": "import type { EulerSDK } from '@eulerxyz/euler-v2-sdk';\nimport type { Address } from 'viem';\n\nexport async function fetchViewerYields(\n  sdk: EulerSDK,\n  chainId: number,\n  owner: Address,\n  viewer: Address,\n) {\n  const { result: portfolio, errors } = await sdk.portfolioService.fetchPortfolio(chainId, owner);\n  if (!portfolio) throw new Error(errors[0]?.message ?? 'Portfolio unavailable');\n\n  return {\n    errors,\n    netApy: portfolio.getNetApy({ viewer }),\n    roe: portfolio.getRoe({ viewer }),\n    apyBreakdown: portfolio.getNetApyBreakdown({ viewer }),\n    roeBreakdown: portfolio.getRoeBreakdown({ viewer }),\n    savings: portfolio.savings.map(position => position.getApyBreakdown({ viewer })),\n    borrows: portfolio.borrows.map(position => ({\n      apyBreakdown: position.getApyBreakdown({ viewer }),\n      roeBreakdown: position.getRoeBreakdown({ viewer }),\n    })),\n  };\n}",
+    "language": "typescript",
+    "description": "Correct (fetch viewer-aware portfolio and position yields)"
+  },
+  {
+    "skill": "euler-sdk",
     "ruleId": "sdk-execution-flow",
     "ruleTitle": "Transaction Planning and Execution",
     "type": "good",
@@ -592,6 +601,15 @@
     "code": "import type { EulerSDK, TransactionPlan } from '@eulerxyz/euler-v2-sdk';\nimport type { Address } from 'viem';\n\nexport async function simulate(sdk: EulerSDK, chainId: number, ownerOrAccount: Address, plan: TransactionPlan) {\nconst result = await sdk.executionService.simulateTransactionPlan(\n  chainId,\n  ownerOrAccount,\n  plan,\n  {\n    stateOverrides: true,\n    accountFetchOptions: {\n      populateVaults: true,\n      populateMarketPrices: true,\n      populateUserRewards: true,\n      vaultFetchOptions: {\n        populateMarketPrices: true,\n        populateRewards: true,\n        populateIntrinsicApy: true,\n      },\n    },\n  },\n);\n\nif (!result.canExecute) {\n  throw new Error(\"Simulation failed safety checks\");\n}\nreturn result;\n}",
     "language": "typescript",
     "description": "Correct simulation flow"
+  },
+  {
+    "skill": "euler-sdk",
+    "ruleId": "sdk-simulation-safety",
+    "ruleTitle": "Pre-Execution Simulation and Safety Gates",
+    "type": "good",
+    "code": "import type {\n  AddressOrAccount,\n  EulerSDK,\n  ExecutePreparedTransactionPlanArgs,\n  TransactionPlan,\n} from '@eulerxyz/euler-v2-sdk';\n\nexport async function executeWithPrefetch(\n  sdk: EulerSDK,\n  chainId: number,\n  account: AddressOrAccount,\n  plan: TransactionPlan,\n  wallet: Pick<ExecutePreparedTransactionPlanArgs, 'sendTransaction' | 'signTypedData'>,\n) {\n  const prefetch = await sdk.executionService.prefetchPluginDataForPlan(plan, account, chainId);\n  const prepared = await sdk.executionService.prepareTransactionPlan({\n    plan, chainId, account, prefetch,\n    usePermit2: true,\n    unlimitedApproval: false,\n  });\n  const simulation = await sdk.executionService.simulatePreparedTransactionPlan(prepared);\n  if (!simulation.canExecute) throw new Error('Prepared plan simulation failed');\n  const estimatedGas = await sdk.executionService.estimateGasForPreparedTransactionPlan(prepared);\n  const execution = await sdk.executionService.executePreparedTransactionPlan({ prepared, ...wallet });\n  return { estimatedGas, execution };\n}",
+    "language": "typescript",
+    "description": "Correct (prefetch during preparation and reuse the prepared plan)"
   },
   {
     "skill": "euler-sdk",

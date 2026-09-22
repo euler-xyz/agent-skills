@@ -5,6 +5,7 @@
 - Verify integration examples against published SDK 3.4.0 and use scoped imports.
 - Document prepared and materialized execution, caching bypass, current data sources, and portable pinned references.
 - Include all SDK rules in the shared validated generation pipeline.
+- Check entity-specific portfolio yield methods and the prepared-plan prefetch API against SDK 3.4.0.
 
 All notable changes to the `euler-sdk` skill are documented in this file.
 

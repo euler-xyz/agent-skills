@@ -50,7 +50,49 @@ Keep `errors` alongside the entity snapshot. Diagnostics are not entity state; u
 
 APY/ROE values on SDK vault and portfolio entities are percentage points (`5` = `5%`). Raw reward campaign APRs are decimal fractions; convert them before adding them to vault APYs in custom UI code, or use the SDK's computed breakdown fields.
 
-Vault rewards are exposed as a `VaultRewardInfo` whose `getTotalRewardsApr({ viewer })` / `getActiveCampaigns({ viewer })` apply Merkl-style whitelist/blacklist eligibility — the plain `totalRewardsApr` getter stays headline (no viewer). Portfolio, per-position, and sub-account views mirror this: headline `netApy`/`roe`/`apyBreakdown`/`roeBreakdown` getters vs viewer-aware `getNetApy/getRoe/getApyBreakdown/getRoeBreakdown({ viewer })`. Pass the connected address as `viewer` once a wallet is connected so gated campaigns don't inflate displayed APY. These breakdowns also pick up `BORROW_COLLATERAL` and `LOOPING` reward campaigns.
+Vault rewards are exposed as a `VaultRewardInfo` whose `getTotalRewardsApr({ viewer })` / `getActiveCampaigns({ viewer })` apply Merkl-style whitelist/blacklist eligibility. The plain `totalRewardsApr` getter returns headline rewards without a viewer. Pass the connected address as `viewer` so gated campaigns don't inflate displayed APY; yield breakdowns also include `BORROW_COLLATERAL` and `LOOPING` reward campaigns.
+
+The viewer-aware method names depend on the entity:
+
+| Entity | Viewer-aware yield methods |
+|--------|----------------------------|
+| `Portfolio` | `getNetApy({ viewer })`, `getRoe({ viewer })`, `getNetApyBreakdown({ viewer })`, `getRoeBreakdown({ viewer })` |
+| `PortfolioSavingsPosition` | `getApyBreakdown({ viewer })` |
+| `PortfolioBorrowPosition` | `getApyBreakdown({ viewer })`, `getRoeBreakdown({ viewer })` |
+| `SubAccount` | `getRoe({ viewer })` returns a structured ROE breakdown |
+
+Portfolio's `netApy`, `roe`, `apyBreakdown`, and `roeBreakdown` getters return the headline values without viewer filtering. Position breakdown getters follow the same headline convention.
+
+**Correct (fetch viewer-aware portfolio and position yields):**
+
+<!-- checked-example: sdk-portfolio-yields -->
+```typescript
+import type { EulerSDK } from '@eulerxyz/euler-v2-sdk';
+import type { Address } from 'viem';
+
+export async function fetchViewerYields(
+  sdk: EulerSDK,
+  chainId: number,
+  owner: Address,
+  viewer: Address,
+) {
+  const { result: portfolio, errors } = await sdk.portfolioService.fetchPortfolio(chainId, owner);
+  if (!portfolio) throw new Error(errors[0]?.message ?? 'Portfolio unavailable');
+
+  return {
+    errors,
+    netApy: portfolio.getNetApy({ viewer }),
+    roe: portfolio.getRoe({ viewer }),
+    apyBreakdown: portfolio.getNetApyBreakdown({ viewer }),
+    roeBreakdown: portfolio.getRoeBreakdown({ viewer }),
+    savings: portfolio.savings.map(position => position.getApyBreakdown({ viewer })),
+    borrows: portfolio.borrows.map(position => ({
+      apyBreakdown: position.getApyBreakdown({ viewer }),
+      roeBreakdown: position.getRoeBreakdown({ viewer }),
+    })),
+  };
+}
+```
 
 USD market price and value fields (`marketPriceUsd`, `suppliedValueUsd`, `borrowedValueUsd`, `totalRewardsValueUsd`, portfolio USD totals) are plain `number` values. Direct oracle/risk fields such as `oraclePriceRaw`, `assetRiskPrice`, `healthFactor`, and LTV ratios remain `bigint`.
 
@@ -58,8 +100,8 @@ USD market price and value fields (`marketPriceUsd`, `suppliedValueUsd`, `borrow
 
 For position-first UIs (savings/borrows lists, net-worth headers), use
 `portfolioService` instead of hand-rolling over sub-accounts. `fetchPortfolio(chainId, owner)`
-fetches the backing account with `populateAll: true` and returns a `Portfolio`;
-`buildPortfolio(account)` wraps an already-populated account. It exposes `.savings`,
+fetches the backing account with `populateAll: true` and returns a diagnostics envelope
+`{ result: portfolio, errors }`; `buildPortfolio(account)` directly wraps an already-populated account. It exposes `.savings`,
 `.borrows`, and computed totals (`netAssetValueUsd`, `netApy`, `roe`,
 `totalRewardsValueUsd`), plus `positionFilter` and `getNextSubAccount(...)`. Use
 `Account` for contract-shaped data; use `Portfolio` for the opinionated view. The

@@ -18,7 +18,7 @@ for (const name of SKILL_NAMES) {
 }
 
 test('marked documentation examples compile against the exact published SDK', async () => {
-  for (const required of ['sdk-build', 'sdk-cache', 'sdk-execution', 'account-read', 'interface-services', 'earn-targets', 'sdk-simulation', 'sdk-plugins']) assert.ok(examples.has(required), `Missing example ${required}`)
+  for (const required of ['sdk-build', 'sdk-cache', 'sdk-execution', 'account-read', 'interface-services', 'earn-targets', 'sdk-simulation', 'sdk-plugins', 'sdk-portfolio-yields', 'sdk-prepared-prefetch']) assert.ok(examples.has(required), `Missing example ${required}`)
   const provenance = JSON.parse(await readFile(new URL('../../../sources.json', import.meta.url), 'utf8'))
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
   assert.equal(manifest.devDependencies[provenance.sdk.package], provenance.sdk.version)
