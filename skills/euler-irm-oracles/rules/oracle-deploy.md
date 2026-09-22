@@ -72,49 +72,47 @@ pyth.updatePriceFeeds{value: updateFee}(updateData);
 vault.withdraw(amount, receiver, owner); // Oracle query succeeds
 ```
 
+Use the SDK Pyth plugin for integrated read/simulation/execution paths. When constructing an EVC batch manually, fetch hex-encoded Hermes updates and forward the exact fee. The position must already have its collateral and controller configured.
+
 ```typescript
-// TypeScript: Fetching Pyth price updates
-async function getPythUpdateData(feedIds: string[]): Promise<string[]> {
-  const response = await fetch(
-    `https://hermes.pyth.network/api/latest_vaas?ids[]=${feedIds.join('&ids[]=')}`
-  );
-  const data = await response.json();
-  return data.map((vaa: string) => `0x${vaa}`);
+import { encodeFunctionData, type Hex } from 'viem';
+
+async function getPythUpdateData(feedIds: string[]): Promise<Hex[]> {
+  const query = new URLSearchParams({ encoding: 'hex' });
+  for (const id of feedIds) query.append('ids[]', id);
+  const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?${query}`);
+  if (!response.ok) throw new Error(`Hermes: ${response.status}`);
+  const body = await response.json();
+  if (body.binary?.encoding !== 'hex' || !Array.isArray(body.binary.data)) {
+    throw new Error('Expected hex-encoded Hermes updates');
+  }
+  return body.binary.data.map((data: string) => {
+    const hex = data.replace(/^0x/, '');
+    if (!/^(?:[a-fA-F0-9]{2})+$/.test(hex)) throw new Error('Invalid update data');
+    return `0x${hex}` as Hex;
+  });
 }
 
-// Include price update in your transaction
 const updateData = await getPythUpdateData([priceFeedId]);
 const updateFee = await pythContract.read.getUpdateFee([updateData]);
-
-// Option 1: Separate transaction
-await pythContract.write.updatePriceFeeds(updateData, { value: updateFee });
-await vault.write.deposit([amount, receiver]);
-
-// Option 2: Batch via EVC (recommended)
 const batchItems = [
   {
     targetContract: pythAddress,
-    onBehalfOfAccount: zeroAddress,
+    onBehalfOfAccount: ownerAddress, // External targets need an authenticated caller.
     value: updateFee,
-    data: encodeFunctionData({
-      abi: pythABI,
-      functionName: 'updatePriceFeeds',
-      args: [updateData]
-    })
+    data: encodeFunctionData({ abi: pythABI, functionName: 'updatePriceFeeds', args: [updateData] }),
   },
   {
     targetContract: vaultAddress,
     onBehalfOfAccount: account,
     value: 0n,
-    data: encodeFunctionData({
-      abi: evaultABI,
-      functionName: 'borrow',
-      args: [amount, receiver]
-    })
-  }
+    data: encodeFunctionData({ abi: evaultABI, functionName: 'borrow', args: [amount, ownerAddress] }),
+  },
 ];
-await evc.write.batch(batchItems, { value: updateFee });
+await evc.write.batch([batchItems], { value: updateFee });
 ```
+
+For a standalone update, use `pythContract.write.updatePriceFeeds([updateData], { value: updateFee })` and confirm its successful receipt before a dependent operation. Batching keeps the update and dependent action atomic.
 
 **Correct (deploy rate provider oracle for LSTs):**
 

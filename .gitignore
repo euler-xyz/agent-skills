@@ -20,3 +20,6 @@ Thumbs.db
 
 # External reference repositories (can be re-cloned)
 resources-building/
+
+# Optional single-skill evaluation exports
+packages/euler-build/test-cases.*.json

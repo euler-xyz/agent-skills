@@ -1,32 +1,23 @@
 # Euler IRM & Oracles Agent Skill
 
-**Version 1.0.0**  
-Euler Labs  
-January 2026
+**Version 1.1.0**
 
-> **Note:**  
-> This document is for agents and LLMs to follow when working with  
-> Euler Finance price oracles and Interest Rate Models. It covers deploying  
-> adapters, configuring EulerRouter, querying prices, and understanding IRM types.
+Euler Labs
 
----
+September 2026
 
-## Abstract
+> Generated from SKILL.md, metadata.json, and rules/. Edit those sources and run pnpm build.
 
 Oracle and Interest Rate Model guide for Euler Finance V2 protocol. Covers deploying oracle adapters (Chainlink, Pyth, Chronicle, RedStone, Pendle), configuring EulerRouter for price resolution, querying asset prices, and understanding IRM types (Linear Kink, Linear Kinky, Adaptive Curve, Fixed Cyclical Binary).
 
----
-
 ## Table of Contents
 
-1. [Oracle Integration](#1-oracle-integration) — **HIGH**
-   - 1.1 [Configure EulerRouter for Price Resolution](#11-configure-eulerrouter-for-price-resolution)
-   - 1.2 [Deploy an Oracle Adapter](#12-deploy-an-oracle-adapter)
-   - 1.3 [Get Asset Prices from Oracles](#13-get-asset-prices-from-oracles)
-2. [Interest Rate Models](#2-interest-rate-models) — **HIGH**
-   - 2.1 [Interest Rate Model Types and Configuration](#21-interest-rate-model-types-and-configuration)
-
----
+- [Oracle Integration](#1-oracle-integration)
+  - [Configure EulerRouter for Price Resolution](#oracle-configure-router-configure-eulerrouter-for-price-resolution)
+  - [Deploy an Oracle Adapter](#oracle-deploy-deploy-an-oracle-adapter)
+  - [Get Asset Prices from Oracles](#oracle-get-price-get-asset-prices-from-oracles)
+- [Interest Rate Models](#2-interest-rate-models)
+  - [Interest Rate Model Types and Configuration](#irm-models-interest-rate-model-types-and-configuration)
 
 ## 1. Oracle Integration
 
@@ -34,13 +25,13 @@ Oracle and Interest Rate Model guide for Euler Finance V2 protocol. Covers deplo
 
 Oracle integration guide for Euler Finance V2 protocol. Covers deploying oracle adapters (Chainlink, Pyth, Chronicle, RedStone, Cross, Fixed Rate), configuring EulerRouter for price resolution, and querying asset prices. Essential for vault creation and price feed management.
 
-### 1.1 Configure EulerRouter for Price Resolution
+### oracle-configure-router Configure EulerRouter for Price Resolution
 
 **Impact: HIGH (Central oracle routing for vault pricing)**
 
 EulerRouter is the central price resolution contract that routes price queries to appropriate oracle adapters. It supports direct pricing and ERC-4626 vault share pricing via `convertToAssets`.
 
-**Incorrect: hardcoding oracle in vault**
+**Incorrect (hardcoding oracle in vault):**
 
 ```solidity
 // Don't hardcode individual oracles in vaults
@@ -49,7 +40,7 @@ IEVault(vault).setOracle(specificOracleAdapter);
 // If oracle has issues, vault is stuck
 ```
 
-**Correct: deploy and configure EulerRouter**
+**Correct (deploy and configure EulerRouter):**
 
 ```solidity
 import {EulerRouter} from "euler-price-oracle/EulerRouter.sol";
@@ -66,7 +57,7 @@ EulerRouter eulerRouter = EulerRouter(router);
 // Note: Assets are lexicographically sorted internally
 eulerRouter.govSetConfig(
     weth,                    // Base asset
-    usd,                     // Quote asset  
+    usd,                     // Quote asset
     chainlinkEthUsdOracle    // Oracle adapter address
 );
 
@@ -78,7 +69,7 @@ eulerRouter.govSetConfig(
 );
 ```
 
-**Correct: understanding resolution - NO automatic cross-pricing**
+**Correct (understanding resolution - NO automatic cross-pricing):**
 
 ```solidity
 // IMPORTANT: EulerRouter does NOT automatically chain oracles!
@@ -112,7 +103,41 @@ CrossAdapter crossAdapter = new CrossAdapter(
 eulerRouter.govSetConfig(tokenAddress, usd, crossAdapter);
 ```
 
-**Correct: ERC-4626 vault share pricing**
+**Correct (ERC-4626 vault share pricing):**
+
+```solidity
+// For pricing vault shares in terms of underlying
+// Router uses convertToAssets() for automatic share->asset conversion
+
+// Configure underlying asset pricing first
+eulerRouter.govSetConfig(
+    underlyingAsset,
+    usd,
+    underlyingOracle
+);
+
+// Enable vault share resolution
+// Router will call vault.convertToAssets() and recurse
+eulerRouter.govSetResolvedVault(
+    vaultAddress,
+    true  // Enable automatic share->asset conversion
+);
+
+// To disable later:
+eulerRouter.govSetResolvedVault(vaultAddress, false);
+
+// Now queries for vault shares work:
+// vaultShares -> convertToAssets -> underlying -> USD
+uint256 shareValueUsd = eulerRouter.getQuote(1e18, vaultAddress, usd);
+
+// IMPORTANT: Verify vault's convertToAssets is secure before configuring!
+// Per ERC4626 spec, convert* ignores liquidity, fees, slippage
+// The reported price may not be realizable through redeem/withdraw
+```
+
+**Example: Pricing sUSDS (ERC4626 vault for USDS) as collateral**
+
+For yield-bearing tokens like sUSDS used as collateral in an Euler vault, you need to configure the full pricing chain:
 
 ```solidity
 // sUSDS is an ERC4626 vault wrapping USDS
@@ -155,11 +180,7 @@ uint256 susdsValueInUsd = eulerRouter.getQuote(1e18, susds, usd);
 uint256 eVaultShareValueInUsd = eulerRouter.getQuote(1e18, eulerVaultSUSDS, usd);
 ```
 
-**Example: Pricing sUSDS (ERC4626 vault for USDS) as collateral**
-
-For yield-bearing tokens like sUSDS used as collateral in an Euler vault, you need to configure the full pricing chain:
-
-**Correct: TypeScript router configuration**
+**Correct (TypeScript router configuration):**
 
 ```typescript
 import { encodeFunctionData, getContract } from 'viem';
@@ -174,7 +195,7 @@ const eulerRouter = getContract({
 // Note: gov functions require being called by governor via EVC context
 await eulerRouter.write.govSetConfig([
   wethAddress,        // base
-  usdAddress,         // quote  
+  usdAddress,         // quote
   chainlinkOracle     // oracle adapter
 ]);
 
@@ -205,7 +226,7 @@ const oracle = await eulerRouter.read.getConfiguredOracle([
 ]);
 ```
 
-**Correct: fallback configuration**
+**Correct (fallback configuration):**
 
 ```solidity
 // Set fallback oracle for pairs without direct config
@@ -223,7 +244,7 @@ eulerRouter.govSetFallbackOracle(address(0));
 // 5. No fallback → revert PriceOracle_NotSupported(base, quote)
 ```
 
-**Correct: querying existing configuration**
+**Correct (querying existing configuration):**
 
 ```solidity
 // Get configured oracle for a pair
@@ -238,7 +259,7 @@ bool isResolved = asset != address(0);
 address fallback = eulerRouter.fallbackOracle();
 
 // Simulate full resolution path
-(uint256 resolvedAmount, address resolvedBase, address resolvedQuote, address resolvedOracle) = 
+(uint256 resolvedAmount, address resolvedBase, address resolvedQuote, address resolvedOracle) =
     eulerRouter.resolveOracle(inAmount, base, quote);
 ```
 
@@ -256,19 +277,19 @@ eulerRouter.transferGovernance(address(0));
 // This allows fixing oracle issues without vault redeployment
 
 // Assets are lexicographically sorted internally in the mapping
-// govSetConfig(A, B, oracle) and govSetConfig(B, A, oracle) 
+// govSetConfig(A, B, oracle) and govSetConfig(B, A, oracle)
 // configure the same pair - order doesn't matter for callers
 ```
 
-Reference: [https://github.com/euler-xyz/euler-price-oracle/blob/master/src/EulerRouter.sol](https://github.com/euler-xyz/euler-price-oracle/blob/master/src/EulerRouter.sol)
+Reference: [EulerRouter Source](https://github.com/euler-xyz/euler-price-oracle/blob/master/src/EulerRouter.sol)
 
-### 1.2 Deploy an Oracle Adapter
+### oracle-deploy Deploy an Oracle Adapter
 
 **Impact: HIGH (Required for vault pricing and risk management)**
 
 Oracle adapters translate external price feeds into Euler's `IPriceOracle` interface. Each adapter is immutable and connects to a single price source.
 
-**Incorrect: using Chainlink directly without adapter**
+**Incorrect (using Chainlink directly without adapter):**
 
 ```solidity
 // Chainlink returns (roundId, answer, startedAt, updatedAt, answeredInRound)
@@ -277,7 +298,7 @@ Oracle adapters translate external price feeds into Euler's `IPriceOracle` inter
 // Also missing staleness checks, decimal handling, etc.
 ```
 
-**Correct: deploy ChainlinkOracle adapter**
+**Correct (deploy ChainlinkOracle adapter):**
 
 ```solidity
 import {ChainlinkOracle} from "euler-price-oracle/adapter/chainlink/ChainlinkOracle.sol";
@@ -295,57 +316,85 @@ ChainlinkOracle oracle = new ChainlinkOracle(
 uint256 ethValueInUsd = oracle.getQuote(1e18, weth, usd);
 ```
 
-**Correct: deploy PythOracle adapter**
+**Correct (deploy PythOracle adapter):**
 
-```typescript
-// TypeScript: Fetching Pyth price updates
-async function getPythUpdateData(feedIds: string[]): Promise<string[]> {
-  const response = await fetch(
-    `https://hermes.pyth.network/api/latest_vaas?ids[]=${feedIds.join('&ids[]=')}`
-  );
-  const data = await response.json();
-  return data.map((vaa: string) => `0x${vaa}`);
-}
+```solidity
+import {PythOracle} from "euler-price-oracle/adapter/pyth/PythOracle.sol";
 
-// Include price update in your transaction
-const updateData = await getPythUpdateData([priceFeedId]);
-const updateFee = await pythContract.read.getUpdateFee([updateData]);
-
-// Option 1: Separate transaction
-await pythContract.write.updatePriceFeeds(updateData, { value: updateFee });
-await vault.write.deposit([amount, receiver]);
-
-// Option 2: Batch via EVC (recommended)
-const batchItems = [
-  {
-    targetContract: pythAddress,
-    onBehalfOfAccount: zeroAddress,
-    value: updateFee,
-    data: encodeFunctionData({
-      abi: pythABI,
-      functionName: 'updatePriceFeeds',
-      args: [updateData]
-    })
-  },
-  {
-    targetContract: vaultAddress,
-    onBehalfOfAccount: account,
-    value: 0n,
-    data: encodeFunctionData({
-      abi: evaultABI,
-      functionName: 'borrow',
-      args: [amount, receiver]
-    })
-  }
-];
-await evc.write.batch(batchItems, { value: updateFee });
+// Pyth is a pull-based oracle - requires price updates
+PythOracle oracle = new PythOracle(
+    pythContract,         // Pyth contract address
+    base,                 // Base token
+    quote,                // Quote token
+    feedId,               // Pyth price feed ID (bytes32)
+    maxStaleness,         // Max staleness in seconds
+    maxConfidenceInterval // Max confidence width (e.g., 0.01e18 for 1%)
+);
 ```
 
 **CRITICAL: Pyth Price Updates Required**
 
 Pyth oracles are pull-based and **will revert if prices are stale**. You must update prices before any Euler operation that requires health checks (withdrawals, borrows, liquidations, etc.):
 
-**Correct: deploy rate provider oracle for LSTs**
+```solidity
+import {IPyth} from "@pythnetwork/pyth-sdk-solidity/IPyth.sol";
+
+// Step 1: Get update data off-chain (from Pyth Hermes API)
+// https://hermes.pyth.network/docs/
+
+// Step 2: Update price on-chain before your operation
+bytes[] memory updateData = getUpdateDataFromHermes(feedId);
+uint256 updateFee = pyth.getUpdateFee(updateData);
+pyth.updatePriceFeeds{value: updateFee}(updateData);
+
+// Step 3: Now Euler operations that need oracle will work
+// Note: deposits don't require oracle, but withdrawals/borrows do
+vault.withdraw(amount, receiver, owner); // Oracle query succeeds
+```
+
+Use the SDK Pyth plugin for integrated read/simulation/execution paths. When constructing an EVC batch manually, fetch hex-encoded Hermes updates and forward the exact fee. The position must already have its collateral and controller configured.
+
+```typescript
+import { encodeFunctionData, type Hex } from 'viem';
+
+async function getPythUpdateData(feedIds: string[]): Promise<Hex[]> {
+  const query = new URLSearchParams({ encoding: 'hex' });
+  for (const id of feedIds) query.append('ids[]', id);
+  const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?${query}`);
+  if (!response.ok) throw new Error(`Hermes: ${response.status}`);
+  const body = await response.json();
+  if (body.binary?.encoding !== 'hex' || !Array.isArray(body.binary.data)) {
+    throw new Error('Expected hex-encoded Hermes updates');
+  }
+  return body.binary.data.map((data: string) => {
+    const hex = data.replace(/^0x/, '');
+    if (!/^(?:[a-fA-F0-9]{2})+$/.test(hex)) throw new Error('Invalid update data');
+    return `0x${hex}` as Hex;
+  });
+}
+
+const updateData = await getPythUpdateData([priceFeedId]);
+const updateFee = await pythContract.read.getUpdateFee([updateData]);
+const batchItems = [
+  {
+    targetContract: pythAddress,
+    onBehalfOfAccount: ownerAddress, // External targets need an authenticated caller.
+    value: updateFee,
+    data: encodeFunctionData({ abi: pythABI, functionName: 'updatePriceFeeds', args: [updateData] }),
+  },
+  {
+    targetContract: vaultAddress,
+    onBehalfOfAccount: account,
+    value: 0n,
+    data: encodeFunctionData({ abi: evaultABI, functionName: 'borrow', args: [amount, ownerAddress] }),
+  },
+];
+await evc.write.batch([batchItems], { value: updateFee });
+```
+
+For a standalone update, use `pythContract.write.updatePriceFeeds([updateData], { value: updateFee })` and confirm its successful receipt before a dependent operation. Batching keeps the update and dependent action atomic.
+
+**Correct (deploy rate provider oracle for LSTs):**
 
 ```solidity
 import {LidoOracle} from "euler-price-oracle/adapter/lido/LidoOracle.sol";
@@ -364,7 +413,7 @@ RateProviderOracle rateOracle = new RateProviderOracle(
 );
 ```
 
-**Correct: deploy ChronicleOracle adapter**
+**Correct (deploy ChronicleOracle adapter):**
 
 ```solidity
 import {ChronicleOracle} from "euler-price-oracle/adapter/chronicle/ChronicleOracle.sol";
@@ -382,7 +431,7 @@ ChronicleOracle oracle = new ChronicleOracle(
 // Contact Chronicle team for production whitelisting
 ```
 
-**Correct: deploy FixedRateOracle for stablecoins**
+**Correct (deploy FixedRateOracle for stablecoins):**
 
 ```solidity
 import {FixedRateOracle} from "euler-price-oracle/adapter/fixed/FixedRateOracle.sol";
@@ -400,7 +449,7 @@ FixedRateOracle oracle = new FixedRateOracle(
 // - Testing and development
 ```
 
-**Correct: deploy CrossAdapter for chained pricing**
+**Correct (deploy CrossAdapter for chained pricing):**
 
 ```solidity
 import {CrossAdapter} from "euler-price-oracle/adapter/CrossAdapter.sol";
@@ -422,7 +471,7 @@ CrossAdapter linkUsdOracle = new CrossAdapter(
 // Useful for tokens that only have ETH pairs but vault needs USD pricing
 ```
 
-**Correct: deploy PendleOracle for yield-bearing tokens**
+**Correct (deploy PendleOracle for yield-bearing tokens):**
 
 ```solidity
 import {PendleOracle} from "euler-price-oracle/adapter/pendle/PendleOracle.sol";
@@ -458,15 +507,15 @@ uint256 reverseQuote = oracle.getQuote(quoteAmount, quote, base);
 console.log("Bid:", bidOut, "Ask:", askOut);
 ```
 
-Reference: [https://github.com/euler-xyz/euler-price-oracle#oracle-adapters](https://github.com/euler-xyz/euler-price-oracle#oracle-adapters)
+Reference: [Euler Price Oracle Adapters](https://github.com/euler-xyz/euler-price-oracle#oracle-adapters)
 
-### 1.3 Get Asset Prices from Oracles
+### oracle-get-price Get Asset Prices from Oracles
 
 **Impact: HIGH (Essential for value calculations and risk assessment)**
 
 Querying prices is fundamental for calculating position values, health factors, and making trading decisions. Euler oracles use a quote-based interface that returns amounts rather than unit prices.
 
-**Incorrect: assuming unit price response**
+**Incorrect (assuming unit price response):**
 
 ```solidity
 // Wrong: Oracles don't return "price per token"
@@ -475,7 +524,7 @@ uint256 value = tokenAmount * price;
 // getPrice() doesn't exist in IPriceOracle!
 ```
 
-**Correct: using getQuote for amount conversion**
+**Correct (using getQuote for amount conversion):**
 
 ```solidity
 import {IPriceOracle} from "euler-price-oracle/interfaces/IPriceOracle.sol";
@@ -493,34 +542,29 @@ uint256 ethInUsd = IPriceOracle(oracle).getQuote(
 
 // Get value of 0.5 BTC in ETH
 uint256 btcInEth = IPriceOracle(oracle).getQuote(
-    0.5e8,     // inAmount: 0.5 BTC (8 decimals)  
+    0.5e8,     // inAmount: 0.5 BTC (8 decimals)
     wbtc,      // base: BTC
     weth       // quote: ETH
 );
 // Returns: 15e18 (if 0.5 BTC = 15 ETH)
 ```
 
-**Correct: using OracleLens for comprehensive data**
+**Correct (reading an amount quote in TypeScript):**
 
 ```typescript
-import { OracleLens } from '@eulerxyz/evk-periphery';
+import { parseAbi } from 'viem';
 
-// OracleLens provides rich oracle information
-const oracleInfo = await oracleLens.getOracleInfo(
-  oracleAddress,
-  [weth, wbtc, link],  // base tokens
-  [usd, usd, usd]       // quote tokens
-);
-
-// Access individual prices
-oracleInfo.prices.forEach((priceInfo, i) => {
-  console.log(`${bases[i]}: ${priceInfo.quote} ${quotes[i]}`);
-  console.log(`  Oracle: ${priceInfo.oracle}`);
-  console.log(`  Success: ${priceInfo.success}`);
+const quoteAmount = await publicClient.readContract({
+  address: oracleAddress,
+  abi: parseAbi(['function getQuote(uint256 inAmount, address base, address quote) view returns (uint256 outAmount)']),
+  functionName: 'getQuote',
+  args: [baseAmount, baseAddress, quoteAddress],
 });
 ```
 
-**Correct: bid/ask pricing for spreads**
+OracleLens `getOracleInfo(oracle, bases, quotes)` returns adapter metadata and resolution information, not a `prices` array. Use `getQuote`/`getQuotes` for amounts and handle stale or unavailable feed errors explicitly. Pull-based feeds need updates before the quote can succeed.
+
+**Correct (bid/ask pricing for spreads):**
 
 ```solidity
 // getQuotes returns both bid and ask prices
@@ -542,16 +586,12 @@ uint256 debtValue = (debtAmount * askOut) / 1e18;
 ```
 
 Key points:
-
 - `getQuote` converts amounts, not returns unit prices
-
 - Decimals are handled internally by adapters
-
 - **Pyth oracles require price updates before any operation that uses them**
 
-Reference: [https://github.com/euler-xyz/euler-price-oracle#iprice oracle](https://github.com/euler-xyz/euler-price-oracle#iprice oracle)
+Reference: [IPriceOracle Interface](https://github.com/euler-xyz/euler-price-oracle#ipriceoracle)
 
----
 
 ## 2. Interest Rate Models
 
@@ -559,13 +599,13 @@ Reference: [https://github.com/euler-xyz/euler-price-oracle#iprice oracle](https
 
 Available Interest Rate Models and their configuration. Euler supports multiple IRM types (Linear Kink, Kinky, Adaptive Curve, Fixed Cyclical Binary) each suited for different use cases and risk profiles.
 
-### 2.1 Interest Rate Model Types and Configuration
+### irm-models Interest Rate Model Types and Configuration
 
 **Impact: HIGH (Critical for selecting and configuring appropriate interest rates)**
 
 Euler V2 supports multiple Interest Rate Model (IRM) types, each suited for different market dynamics and risk profiles. Governors can also bring their own custom IRM as long as it conforms to the `IIRM` interface, though custom IRMs may not be supported by the Euler UI.
 
-**Incorrect: misconfigured IRM parameters**
+**Incorrect (misconfigured IRM parameters):**
 
 ```solidity
 // WRONG: Poorly configured IRM parameters
@@ -579,7 +619,105 @@ address irm = kinkIRMFactory.deploy(
 // Result: rates too high → low utilization → poor capital efficiency
 ```
 
-**Correct: choosing appropriate IRM type**
+**Correct (choosing appropriate IRM type):**
+
+#### 1. Linear Kink IRM (IRMLinearKink)
+
+Traditional two-slope model. Rate increases linearly up to kink, then accelerates.
+
+```solidity
+import {EulerKinkIRMFactory} from "evk-periphery/IRMFactory/EulerKinkIRMFactory.sol";
+
+// Good for stable assets with predictable utilization
+// kink parameter is uint32, representing utilization on type(uint32).max scale
+// 90% utilization = type(uint32).max * 9 / 10 = 3865470566
+address kinkIRM = EulerKinkIRMFactory(kinkIRMFactory).deploy(
+    0,            // baseRate: 0% at 0 utilization
+    1406417851,   // slope1: ~10% APY at 50% kink (in SPY)
+    19050045013,  // slope2: ~100% APY at 100% utilization (in SPY)
+    3865470566    // kink: 90% utilization (type(uint32).max * 9 / 10)
+);
+
+// Rate formula:
+// if utilization <= kink: rate = baseRate + utilization * slope1
+// else: rate = baseRate + kink * slope1 + (utilization - kink) * slope2
+//
+// Common kink values (type(uint32).max scale):
+// - 50%: 2147483648  (type(uint32).max / 2)
+// - 80%: 3435973837  (type(uint32).max * 8 / 10)
+// - 90%: 3865470566  (type(uint32).max * 9 / 10)
+```
+
+Use the helper script to calculate parameters from human-readable APY values:
+
+```bash
+# Usage: node calculate-irm-linear-kink.js borrow <baseIr> <kinkIr> <maxIr> <kink>
+# Example: Base=0%, Kink(90%)=4% APY, Max=100% APY
+node calculate-irm-linear-kink.js borrow 0 4 100 90
+# Output: 0, 1406417851, 19050045013, 3865470566
+```
+
+See: [calculate-irm-linear-kink.js](https://github.com/euler-xyz/evk-periphery/blob/development/script/utils/calculate-irm-linear-kink.js)
+
+#### 2. Adaptive Curve IRM (IRMAdaptiveCurve)
+
+Self-adjusting model that targets specific utilization. Rate at target adjusts based on time spent above/below target.
+
+```solidity
+import {EulerIRMAdaptiveCurveFactory} from "evk-periphery/IRMFactory/EulerIRMAdaptiveCurveFactory.sol";
+
+// Good for volatile assets or when optimal utilization is uncertain
+address adaptiveIRM = EulerIRMAdaptiveCurveFactory(adaptiveCurveFactory).deploy(
+    0.9e18,       // TARGET_UTILIZATION: 90%
+    0.04e18 / int256(365.2425 days),  // INITIAL_RATE_AT_TARGET: 4% APY
+    0.001e18 / int256(365.2425 days), // MIN_RATE_AT_TARGET: 0.1% APY
+    2e18 / int256(365.2425 days),     // MAX_RATE_AT_TARGET: 200% APY
+    4e18,         // CURVE_STEEPNESS: 4x steeper above target
+    2e18 / int256(24 hours)  // ADJUSTMENT_SPEED: 2x per day
+);
+
+// Rate adjusts automatically:
+// - Utilization above target → rate increases
+// - Utilization below target → rate decreases
+// - Bounded by MIN and MAX rates at target
+```
+
+Use the helper script to calculate parameters from human-readable APY values:
+
+```bash
+# Usage: node calculate-irm-adaptive-curve.js <targetUtilization> <initialIrAtTarget> <minIrAtTarget> <maxIrAtTarget> [curveSteepness] [adjustmentSpeedDays]
+# Example: Target=90%, Initial=4% APY, Min=0.1% APY, Max=200% APY
+node calculate-irm-adaptive-curve.js 90 4 0.1 200
+# Default: curveSteepness=4.0, adjustmentSpeedDays=7
+```
+
+See: [calculate-irm-adaptive-curve.js](https://github.com/euler-xyz/evk-periphery/blob/development/script/utils/calculate-irm-adaptive-curve.js)
+
+#### 3. Linear Kinky IRM (IRMLinearKinky)
+
+Similar to kink IRM but with non-linear acceleration after kink using shape parameter.
+
+```solidity
+import {EulerKinkyIRMFactory} from "evk-periphery/IRMFactory/EulerKinkyIRMFactory.sol";
+
+// Good for markets that need smoother rate transitions
+// Example: Base=0%, Kink(50%)=10% APY, Max=300% APY, Shape=10
+address kinkyIRM = EulerKinkyIRMFactory(kinkyIRMFactory).deploy(
+    0,             // baseRate: 0% at 0 utilization
+    1406417851,    // slope: rate growth factor (in SPY)
+    10,            // shape: 0-100, controls non-linear acceleration
+    2147483648,    // kink: 50% utilization (type(uint32).max / 2)
+    43929920467914357205  // cutoff: ~1000% APY max (caps extreme rates)
+);
+
+// Shape parameter controls how aggressively rates spike after kink
+// shape = 0: similar to linear kink
+// shape = 100: very aggressive spike
+```
+
+#### 4. Fixed Cyclical Binary IRM (IRMFixedCyclicalBinary)
+
+Alternates between two fixed rates on a schedule. Useful for special mechanisms.
 
 ```solidity
 import {EulerFixedCyclicalBinaryIRMFactory} from "evk-periphery/IRMFactory/EulerFixedCyclicalBinaryIRMFactory.sol";
@@ -594,28 +732,10 @@ address cyclicalIRM = EulerFixedCyclicalBinaryIRMFactory(factory).deploy(
 );
 ```
 
-Traditional two-slope model. Rate increases linearly up to kink, then accelerates.
-
-Use the helper script to calculate parameters from human-readable APY values:
-
-See: [calculate-irm-linear-kink.js](https://github.com/euler-xyz/evk-periphery/blob/development/script/utils/calculate-irm-linear-kink.js)
-
-Self-adjusting model that targets specific utilization. Rate at target adjusts based on time spent above/below target.
-
-Use the helper script to calculate parameters from human-readable APY values:
-
-See: [calculate-irm-adaptive-curve.js](https://github.com/euler-xyz/evk-periphery/blob/development/script/utils/calculate-irm-adaptive-curve.js)
-
-Similar to kink IRM but with non-linear acceleration after kink using shape parameter.
-
-Alternates between two fixed rates on a schedule. Useful for special mechanisms.
-
-Reference: [https://github.com/euler-xyz/evk-periphery/tree/master/src/IRM](https://github.com/euler-xyz/evk-periphery/tree/master/src/IRM)
-
----
+Reference: [IRM Contracts](https://github.com/euler-xyz/evk-periphery/tree/master/src/IRM)
 
 ## References
 
-1. [https://docs.euler.finance](https://docs.euler.finance)
-2. [https://github.com/euler-xyz/euler-price-oracle](https://github.com/euler-xyz/euler-price-oracle)
-3. [https://github.com/euler-xyz/evk-periphery](https://github.com/euler-xyz/evk-periphery)
+- [https://docs.euler.finance](https://docs.euler.finance)
+- [https://github.com/euler-xyz/euler-price-oracle](https://github.com/euler-xyz/euler-price-oracle)
+- [https://github.com/euler-xyz/evk-periphery](https://github.com/euler-xyz/evk-periphery)

@@ -69,28 +69,30 @@ uint256 myShares = IEVault(vault).balanceOf(account);
 
 **TypeScript: repayWithShares example:**
 
+For a direct owner-wallet position, simulate to inspect the predicted return values, then confirm the write through its receipt and resulting state. For a synthetic sub-account, encode this call into an EVC batch with that position as `onBehalfOfAccount`.
+
 ```typescript
-const vault = getContract({
+const { request, result } = await publicClient.simulateContract({
   address: vaultAddress,
   abi: evaultABI,
-  client: walletClient
+  functionName: 'repayWithShares',
+  args: [MaxUint256, ownerAddress],
+  account: ownerAddress,
 });
+const [predictedSharesBurned, predictedAssetsRepaid] = result;
+console.log({ predictedSharesBurned, predictedAssetsRepaid });
 
-// Check balances
-const myDebt = await vault.read.debtOf([account]);
-const myShares = await vault.read.balanceOf([account]);
-const shareValue = await vault.read.convertToAssets([myShares]);
-
-console.log(`Debt: ${myDebt}, Shares: ${myShares}, Share Value: ${shareValue}`);
-
-// Repay with all shares (up to debt amount)
-const [sharesBurned, assetsRepaid] = await vault.write.repayWithShares([
-  MaxUint256,  // use all available shares
-  account
-]);
-
-console.log(`Burned ${sharesBurned} shares, repaid ${assetsRepaid} debt`);
+const hash = await walletClient.writeContract(request);
+const receipt = await publicClient.waitForTransactionReceipt({ hash });
+if (receipt.status !== 'success') throw new Error('Repayment reverted');
+const remainingDebt = await publicClient.readContract({
+  address: vaultAddress, abi: evaultABI, functionName: 'debtOf',
+  args: [ownerAddress],
+});
+console.log({ hash, remainingDebt });
 ```
+
+Simulation results describe the simulated state; the transaction hash is not a tuple of Solidity return values. Reconcile confirmed state before declaring the position closed.
 
 After fully repaying:
 - The controller can be released, freeing your collateral

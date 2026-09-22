@@ -4,7 +4,7 @@ description: EulerEarn yield aggregation guide for Euler Finance. This skill sho
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # EulerEarn Agent Skill

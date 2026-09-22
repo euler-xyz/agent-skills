@@ -91,10 +91,10 @@ earn.setSupplyQueue(newSupplyQueue);
 **Correct (TypeScript vault creation):**
 
 ```typescript
-import { encodeFunctionData } from 'viem';
+import { encodeFunctionData, parseEventLogs } from 'viem';
 
 // Deploy earn vault via factory
-const earnVaultAddress = await eulerEarnFactory.write.createEulerEarn([
+const creationHash = await eulerEarnFactory.write.createEulerEarn([
   ownerAddress,          // initialOwner
   0n,                    // initialTimelock
   usdcAddress,           // asset
@@ -103,7 +103,19 @@ const earnVaultAddress = await eulerEarnFactory.write.createEulerEarn([
   '0x0000000000000000000000000000000000000000000000000000000000000000', // salt
 ]);
 
-// Configure in batch
+// A write returns a transaction hash. Read the deployed address from its receipt.
+const receipt = await publicClient.waitForTransactionReceipt({ hash: creationHash });
+if (receipt.status !== 'success') throw new Error('Vault creation reverted');
+const events = parseEventLogs({
+  abi: eulerEarnFactoryABI,
+  eventName: 'CreateEulerEarn',
+  logs: receipt.logs.filter(log =>
+    log.address.toLowerCase() === eulerEarnFactory.address.toLowerCase()),
+});
+if (events.length !== 1) throw new Error('Expected one factory creation event');
+const earnVaultAddress = events[0].args.eulerEarn;
+
+// Configure the deployed vault
 const setupCalls = [
   encodeFunctionData({
     abi: eulerEarnABI,
@@ -113,7 +125,7 @@ const setupCalls = [
   encodeFunctionData({
     abi: eulerEarnABI,
     functionName: 'setFee',
-    args: [0.1e18], // 10%
+    args: [100_000_000_000_000_000n], // 10%
   }),
   encodeFunctionData({
     abi: eulerEarnABI,
@@ -129,10 +141,12 @@ const setupCalls = [
 
 // Execute setup
 for (const call of setupCalls) {
-  await ownerWallet.sendTransaction({
+  const setupHash = await ownerWallet.sendTransaction({
     to: earnVaultAddress,
     data: call,
   });
+  const setupReceipt = await publicClient.waitForTransactionReceipt({ hash: setupHash });
+  if (setupReceipt.status !== 'success') throw new Error('Vault setup reverted');
 }
 ```
 

@@ -13,12 +13,13 @@ export interface CodeExample {
 }
 
 export interface Rule {
-  id: string // e.g., "1.1", "2.3"
+  id: string // Stable rule filename without .md
   title: string
   section: number // Main section number (1-6)
   subsection?: number // Subsection number within section
   impact: ImpactLevel
   impactDescription?: string // e.g., "Essential for yield comparison"
+  body: string // Original rule Markdown, preserved by generation
   explanation: string
   examples: CodeExample[]
   references?: string[] // URLs or citations

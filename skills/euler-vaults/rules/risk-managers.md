@@ -49,7 +49,7 @@ vault.setFeeReceiver(newFeeReceiver);
 vault.setLTV(
     collateralVault,    // address of collateral vault
     0.85e4,             // 85% borrow LTV
-    0.90e4,             // 90% liquidation LTV  
+    0.90e4,             // 90% liquidation LTV
     0                   // ramp duration (0 for immediate, or seconds to ramp)
 );
 
@@ -115,7 +115,9 @@ vault.setHookConfig(
 // - Rapid response to security incidents
 
 // Example: Emergency disable all deposits and borrows
-vault.setHookConfig(address(0), (1 << 0) | (1 << 5));  // OP_DEPOSIT | OP_BORROW
+uint32 OP_DEPOSIT = 1 << 0;
+uint32 OP_BORROW = 1 << 6;
+vault.setHookConfig(address(0), OP_DEPOSIT | OP_BORROW);
 
 // Example: Install a custom hook for deposits only
 vault.setHookConfig(myHookContract, 1 << 0);  // Only hook deposits
@@ -156,7 +158,7 @@ address orc = vault.oracle();
 address[] memory collaterals = vault.LTVList(); // append only list (may contain vaults that are no longer accepted as collateral)
 uint16 borrowLTV = vault.LTVBorrow(collateral);
 uint16 liqLTV = vault.LTVLiquidation(collateral);
-(uint16 bLTV, uint16 lLTV, uint16 initLTV, uint48 targetTs, uint32 rampDur) = 
+(uint16 bLTV, uint16 lLTV, uint16 initLTV, uint48 targetTs, uint32 rampDur) =
     vault.LTVFull(collateral);
 ```
 
@@ -201,7 +203,7 @@ await vault.write.setInterestRateModel([newIRMAddress]);
 // Read all collaterals and their LTVs
 const ltvList = await vault.read.LTVList();
 for (const collateral of ltvList) {
-  const [borrowLTV, liqLTV, initLTV, targetTs, rampDur] = 
+  const [borrowLTV, liqLTV, initLTV, targetTs, rampDur] =
     await vault.read.LTVFull([collateral]);
   console.log(`${collateral}: borrow=${borrowLTV/100}%, liq=${liqLTV/100}%`);
 }
@@ -224,25 +226,34 @@ uint16 constant GUARANTEED_INTEREST_FEE_MAX = 1e4;    // 100%
 // - maxLiquidationDiscount cannot equal exactly 1e4 (100%)
 ```
 
-**Risk Steward pattern for limited governance:**
+**Risk Steward through GovernorAccessControl:**
+
+The vault's governor remains `GovernorAccessControl`. Its authorized steward can adjust encoded caps and supported IRMs within configured limits. Configure permissions in both GovernorAccessControl and CapRiskSteward before using it; deploying the steward alone grants no vault authority.
 
 ```solidity
 import {CapRiskSteward} from "evk-periphery/Governor/CapRiskSteward.sol";
 
-// CapRiskSteward allows limited cap adjustments without full governance
 CapRiskSteward steward = new CapRiskSteward(
-    evc,
+    governorAccessControl,
+    recognizedIRMFactory,
     admin,
-    3 days,      // riskSteerCooldown: min time between adjustments
-    0.1e18       // riskSteerCapLimit: max 10% change per adjustment
+    1.1e18,  // Maximum multiplicative adjustment factor
+    3 days   // Capacity recharge interval
 );
 
-steward.setRiskSteerVault(vaultAddress, true);
-steward.setSupplyCap(vaultAddress, newSupplyCap);
-steward.setBorrowCap(vaultAddress, newBorrowCap);
+// The target vault occupies the last 20 calldata bytes.
+// newSupplyCap and newBorrowCap are AmountCap-encoded uint16 values.
+bytes memory payload = abi.encodePacked(
+    abi.encodeCall(CapRiskSteward.setCaps, (newSupplyCap, newBorrowCap)),
+    vaultAddress
+);
+(bool success, bytes memory result) = address(steward).call(payload);
+if (!success) {
+    assembly { revert(add(result, 32), mload(result)) }
+}
 ```
 
-When integrating with Euler, vaults verified in `GovernedPerspective` have passed an initial configuration check by Euler. However, **Euler makes no ongoing guarantees** - risk managers can change vault parameters (LTVs, caps, oracles, IRMs, etc.) at any time after initial verification. Users must perform their own due diligence, monitor governance changes, and assess risk according to their own risk appetite. 
+The steward forwards authorized calls through GovernorAccessControl. Use `setInterestRateModel(address)` for IRMs supported by the configured factory. Consult the deployed version's roles, limits, and target encoding before configuring automation.
 
 References:
 - [Governance.sol Source](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Governance.sol)

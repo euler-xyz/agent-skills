@@ -1,332 +1,120 @@
 #!/usr/bin/env node
-/**
- * Build script to compile individual rule files into AGENTS.md
- * Supports building all skills or a specific skill via --skill flag
- */
+import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import type { ImpactLevel, Section } from './types.js'
+import { parseRuleFile } from './parser.js'
+import { getSkillPaths, selectedSkills } from './config.js'
+import { writeOrCheck } from './output.js'
 
-import { readdir, readFile, writeFile, access } from 'fs/promises'
-import { join } from 'path'
-import { Rule, Section, ImpactLevel } from './types.js'
-import { parseRuleFile, RuleFile } from './parser.js'
-import { SKILL_NAMES, getSkillPaths, SkillName } from './config.js'
-
-// Parse command line arguments
-const args = process.argv.slice(2)
-const upgradeVersion = args.includes('--upgrade-version')
-const skillArg = args.find((arg) => arg.startsWith('--skill='))
-const specificSkill = skillArg ? (skillArg.split('=')[1] as SkillName) : null
-
-/**
- * Increment a semver-style version string
- */
-function incrementVersion(version: string): string {
-  const parts = version.split('.').map(Number)
-  parts[parts.length - 1]++
-  return parts.join('.')
+export interface SkillMetadata {
+  version: string
+  organization: string
+  date: string
+  abstract: string
+  references?: string[]
 }
 
-/**
- * Generate markdown from rules
- */
-function generateMarkdown(
-  sections: Section[],
-  metadata: {
-    version: string
-    organization: string
-    date: string
-    abstract: string
-    references?: string[]
-  },
-  skillName: SkillName
-): string {
-  const titleMap: Record<SkillName, string> = {
-    'euler-vaults': 'Euler Finance Agent Skill',
-    'euler-irm-oracles': 'Euler IRM & Oracles Agent Skill',
-    'euler-earn': 'EulerEarn Agent Skill',
-    'euler-advanced': 'Euler Advanced Features Agent Skill',
-    'euler-data': 'Euler Lens & Data Agent Skill',
-  }
-
-  const noteMap: Record<SkillName, string> = {
-    'euler-vaults': `> **Note:**  
-> This document is for agents and LLMs to follow when interacting with,  
-> building on, or integrating Euler Finance protocol. It covers vault operations,  
-> EVC batching, risk management, architecture, and security.
->
-> For specialized topics, see companion skills:
-> - \`euler-irm-oracles\` - Oracle adapters, price resolution, Interest Rate Models
-> - \`euler-earn\` - EulerEarn yield aggregation
-> - \`euler-advanced\` - Hooks, flash loans, fee flow, rewards
-> - \`euler-data\` - Lens contracts, subgraphs, developer tools`,
-    'euler-irm-oracles': `> **Note:**  
-> This document is for agents and LLMs to follow when working with  
-> Euler Finance price oracles and Interest Rate Models. It covers deploying  
-> adapters, configuring EulerRouter, querying prices, and understanding IRM types.`,
-    'euler-earn': `> **Note:**  
-> This document is for agents and LLMs to follow when interacting with  
-> EulerEarn yield aggregation. It covers vault creation, strategy management,  
-> roles, and PublicAllocator.`,
-    'euler-advanced': `> **Note:**  
-> This document is for agents and LLMs to follow when implementing  
-> advanced Euler features. It covers hooks, flash loans, fee flow, and rewards.`,
-    'euler-data': `> **Note:**  
-> This document is for agents and LLMs to follow when querying Euler data  
-> or using developer tools. It covers Lens contracts, subgraphs, contract  
-> interfaces, and no-code vault deployment.`,
-  }
-
-  let md = `# ${titleMap[skillName]}\n\n`
-  md += `**Version ${metadata.version}**  \n`
-  md += `${metadata.organization}  \n`
-  md += `${metadata.date}\n\n`
-  md += `${noteMap[skillName]}\n\n`
-  md += `---\n\n`
-  md += `## Abstract\n\n`
-  md += `${metadata.abstract}\n\n`
-  md += `---\n\n`
-  md += `## Table of Contents\n\n`
-
-  // Generate TOC
-  sections.forEach((section) => {
-    md += `${section.number}. [${section.title}](#${section.number}-${section.title.toLowerCase().replace(/\s+/g, '-')}) — **${section.impact}**\n`
-    section.rules.forEach((rule) => {
-      const anchor = `${rule.id} ${rule.title}`
-        .toLowerCase()
-        .replace(/\s+/g, '-')
-        .replace(/[^\w-]/g, '')
-      md += `   - ${rule.id} [${rule.title}](#${anchor})\n`
-    })
-  })
-
-  md += `\n---\n\n`
-
-  // Generate sections
-  sections.forEach((section) => {
-    md += `## ${section.number}. ${section.title}\n\n`
-    md += `**Impact: ${section.impact}${section.impactDescription ? ` (${section.impactDescription})` : ''}**\n\n`
-
-    if (section.introduction) {
-      md += `${section.introduction}\n\n`
-    }
-
-    section.rules.forEach((rule) => {
-      md += `### ${rule.id} ${rule.title}\n\n`
-      md += `**Impact: ${rule.impact}${rule.impactDescription ? ` (${rule.impactDescription})` : ''}**\n\n`
-      md += `${rule.explanation}\n\n`
-
-      rule.examples.forEach((example) => {
-        if (example.description) {
-          md += `**${example.label}: ${example.description}**\n\n`
-        } else {
-          md += `**${example.label}:**\n\n`
-        }
-
-        if (example.code && example.code.trim()) {
-          md += `\`\`\`${example.language || 'typescript'}\n`
-          md += `${example.code}\n`
-          md += `\`\`\`\n\n`
-        }
-
-        if (example.additionalText) {
-          md += `${example.additionalText}\n\n`
-        }
-      })
-
-      if (rule.references && rule.references.length > 0) {
-        md += `Reference: ${rule.references.map((ref) => `[${ref}](${ref})`).join(', ')}\n\n`
-      }
-    })
-
-    md += `---\n\n`
-  })
-
-  // Add references section
-  if (metadata.references && metadata.references.length > 0) {
-    md += `## References\n\n`
-    metadata.references.forEach((ref, i) => {
-      md += `${i + 1}. [${ref}](${ref})\n`
-    })
-  }
-
-  return md
-}
-
-/**
- * Build a single skill
- */
-async function buildSkill(skillName: SkillName): Promise<{ sections: number; rules: number }> {
+export async function loadSkill(skillName: string) {
   const paths = getSkillPaths(skillName)
-
-  // Check if rules directory exists
-  try {
-    await access(paths.rulesDir)
-  } catch {
-    console.log(`  Skipping ${skillName}: no rules directory`)
-    return { sections: 0, rules: 0 }
+  const metadata: SkillMetadata = JSON.parse(await readFile(paths.metadataFile, 'utf8'))
+  for (const key of ['version', 'organization', 'date', 'abstract'] as const) {
+    if (!metadata[key]?.trim()) throw new Error(`${skillName}: missing metadata.${key}`)
   }
-
-  // Read all rule files
-  const files = await readdir(paths.rulesDir)
-  const ruleFiles = files
-    .filter((f) => f.endsWith('.md') && !f.startsWith('_') && f !== 'README.md')
+  const entrypoint = await readFile(join(paths.skillDir, 'SKILL.md'), 'utf8')
+  const title = entrypoint.match(/^# (.+)$/m)?.[1]
+  if (!title) throw new Error(`${skillName}: SKILL.md is missing its title`)
+  const files = (await readdir(paths.rulesDir))
+    .filter((file) => file.endsWith('.md') && !file.startsWith('_') && file !== 'README.md')
     .sort()
+  if (!files.length) throw new Error(`${skillName}: no rules`)
 
-  if (ruleFiles.length === 0) {
-    console.log(`  Skipping ${skillName}: no rule files`)
-    return { sections: 0, rules: 0 }
-  }
-
-  const ruleData: RuleFile[] = []
-
-  for (const file of ruleFiles) {
-    const filePath = join(paths.rulesDir, file)
-    try {
-      const parsed = await parseRuleFile(filePath, skillName)
-      ruleData.push(parsed)
-    } catch (error) {
-      console.error(`  Error parsing ${file}:`, error)
+  const sections = new Map<number, Section>()
+  for (const file of files) {
+    const { section, rule } = await parseRuleFile(join(paths.rulesDir, file), skillName)
+    if (!sections.has(section)) {
+      sections.set(section, { number: section, title: `Section ${section}`, impact: rule.impact, rules: [] })
     }
+    sections.get(section)!.rules.push(rule)
   }
-
-  // Group rules by section
-  const sectionsMap = new Map<number, Section>()
-
-  ruleData.forEach(({ section, rule }) => {
-    if (!sectionsMap.has(section)) {
-      sectionsMap.set(section, {
-        number: section,
-        title: `Section ${section}`,
-        impact: rule.impact,
-        rules: [],
-      })
-    }
-    sectionsMap.get(section)!.rules.push(rule)
-  })
-
-  // Sort rules within each section
-  sectionsMap.forEach((section) => {
-    section.rules.sort((a, b) =>
-      a.title.localeCompare(b.title, 'en-US', { sensitivity: 'base' })
-    )
-    // Assign IDs
-    section.rules.forEach((rule, index) => {
-      rule.id = `${section.number}.${index + 1}`
-      rule.subsection = index + 1
-    })
-  })
-
-  // Convert to array and sort
-  const sections = Array.from(sectionsMap.values()).sort((a, b) => a.number - b.number)
-
-  // Read section metadata
-  const sectionsFile = join(paths.rulesDir, '_sections.md')
-  try {
-    const sectionsContent = await readFile(sectionsFile, 'utf-8')
-    const sectionBlocks = sectionsContent.split(/(?=^## \d+\. )/m).filter(Boolean)
-
-    for (const block of sectionBlocks) {
-      const headerMatch = block.match(/^## (\d+)\.\s+(.+?)(?:\s+\([^)]+\))?$/m)
-      if (!headerMatch) continue
-
-      const sectionNumber = parseInt(headerMatch[1])
-      const sectionTitle = headerMatch[2].trim()
-
-      const impactMatch = block.match(/\*\*Impact:\*\*\s+(\w+(?:-\w+)?)/i)
-      const impactLevel = impactMatch
-        ? (impactMatch[1].toUpperCase() as ImpactLevel)
-        : 'MEDIUM'
-
-      const descMatch = block.match(/\*\*Description:\*\*\s+(.+?)(?=\n\n##|$)/s)
-      const description = descMatch ? descMatch[1].trim() : ''
-
-      const section = sections.find((s) => s.number === sectionNumber)
-      if (section) {
-        section.title = sectionTitle
-        section.impact = impactLevel
-        section.introduction = description
-      }
-    }
-  } catch (error) {
-    // _sections.md is optional for non-core skills
+  const descriptions = await readFile(join(paths.rulesDir, '_sections.md'), 'utf8')
+  for (const block of descriptions.split(/(?=^## \d+\. )/m)) {
+    const heading = block.match(/^## (\d+)\.\s+(.+?)(?:\s+\([^)]+\))?$/m)
+    if (!heading) continue
+    const section = sections.get(Number(heading[1]))
+    if (!section) continue
+    section.title = heading[2]
+    section.impact = (block.match(/\*\*Impact:\*\*\s+([\w-]+)/)?.[1] ?? section.impact) as ImpactLevel
+    section.introduction = block.match(/\*\*Description:\*\*\s+([\s\S]*?)$/)?.[1].trim()
   }
-
-  // Read metadata
-  let metadata
-  try {
-    const metadataContent = await readFile(paths.metadataFile, 'utf-8')
-    metadata = JSON.parse(metadataContent)
-  } catch {
-    metadata = {
-      version: '1.0.0',
-      organization: 'Euler Labs',
-      date: new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
-      abstract: `Guide for ${skillName}.`,
-    }
-  }
-
-  // Upgrade version if flag is passed (only for euler-vaults)
-  if (upgradeVersion && skillName === 'euler-vaults') {
-    const oldVersion = metadata.version
-    metadata.version = incrementVersion(oldVersion)
-    console.log(`  Upgrading version: ${oldVersion} -> ${metadata.version}`)
-
-    await writeFile(paths.metadataFile, JSON.stringify(metadata, null, 2) + '\n', 'utf-8')
-
-    // Update SKILL.md frontmatter
-    const skillFile = join(paths.skillDir, 'SKILL.md')
-    try {
-      const skillContent = await readFile(skillFile, 'utf-8')
-      const updatedSkillContent = skillContent.replace(
-        /^(---[\s\S]*?version:\s*)"[^"]*"([\s\S]*?---)$/m,
-        `$1"${metadata.version}"$2`
-      )
-      await writeFile(skillFile, updatedSkillContent, 'utf-8')
-    } catch {
-      // SKILL.md update is optional
-    }
-  }
-
-  // Generate markdown
-  const markdown = generateMarkdown(sections, metadata, skillName)
-
-  // Write output
-  await writeFile(paths.outputFile, markdown, 'utf-8')
-
-  return { sections: sections.length, rules: ruleData.length }
+  return { paths, metadata, entrypoint, title, sections: [...sections.values()].sort((a, b) => a.number - b.number) }
 }
 
-/**
- * Main build function
- */
-async function build() {
-  try {
-    console.log('Building AGENTS.md from rules...\n')
+function anchor(title: string): string {
+  return title.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s/g, '-')
+}
 
-    const skillsToBuild = specificSkill ? [specificSkill] : SKILL_NAMES
-
-    let totalSections = 0
-    let totalRules = 0
-
-    for (const skillName of skillsToBuild) {
-      console.log(`Building ${skillName}...`)
-      const paths = getSkillPaths(skillName)
-      console.log(`  Rules directory: ${paths.rulesDir}`)
-      console.log(`  Output file: ${paths.outputFile}`)
-
-      const { sections, rules } = await buildSkill(skillName)
-
-      if (sections > 0) {
-        console.log(`  ✓ Built with ${sections} sections and ${rules} rules\n`)
-        totalSections += sections
-        totalRules += rules
-      }
+// Shift Markdown headings into the rule without touching fenced code or prose.
+export function nestHeadings(body: string): string {
+  let fence: string | undefined
+  const headings: { index: number; level: number }[] = []
+  const lines = body.split('\n')
+  for (const [index, line] of lines.entries()) {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/)
+    if (marker) {
+      if (!fence) fence = marker[1]
+      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && line.slice(marker[0].length).trim() === '') fence = undefined
+      continue
     }
+    const heading = !fence && line.match(/^(#{1,6}) /)
+    if (heading) headings.push({ index, level: heading[1].length })
+  }
+  const shift = 4 - Math.min(4, ...headings.map(heading => heading.level))
+  for (const { index, level } of headings) {
+    lines[index] = '#'.repeat(Math.min(6, level + shift)) + lines[index].slice(level)
+  }
+  return lines.join('\n')
+}
 
-    console.log(`\n✓ Build complete: ${totalSections} total sections, ${totalRules} total rules`)
-  } catch (error) {
-    console.error('Build failed:', error)
-    process.exit(1)
+export function generateMarkdown(skill: Awaited<ReturnType<typeof loadSkill>>): string {
+  const { title, metadata, sections } = skill
+  let md = `# ${title}\n\n**Version ${metadata.version}**\n\n${metadata.organization}\n\n${metadata.date}\n\n`
+  md += '> Generated from SKILL.md, metadata.json, and rules/. Edit those sources and run pnpm build.\n\n'
+  md += `${metadata.abstract}\n\n## Table of Contents\n\n`
+  for (const section of sections) {
+    md += `- [${section.title}](#${anchor(`${section.number}. ${section.title}`)})\n`
+    for (const rule of section.rules) md += `  - [${rule.title}](#${anchor(`${rule.id} ${rule.title}`)})\n`
+  }
+  for (const section of sections) {
+    md += `\n## ${section.number}. ${section.title}\n\n**Impact: ${section.impact}**\n\n`
+    if (section.introduction) md += `${section.introduction}\n\n`
+    for (const rule of section.rules) {
+      md += `### ${rule.id} ${rule.title}\n\n**Impact: ${rule.impact}${rule.impactDescription ? ` (${rule.impactDescription})` : ''}**\n\n${nestHeadings(rule.body)}\n\n`
+    }
+  }
+  if (metadata.references?.length) md += '## References\n\n' + metadata.references.map((url) => `- [${url}](${url})\n`).join('')
+  return md.trimEnd() + '\n'
+}
+
+async function main() {
+  const check = process.argv.includes('--check')
+  const upgrade = process.argv.includes('--upgrade-version')
+  if (check && upgrade) throw new Error('--check and --upgrade-version cannot be combined')
+  for (const name of selectedSkills()) {
+    const skill = await loadSkill(name)
+    if (upgrade) {
+      if (!/^\d+\.\d+\.\d+$/.test(skill.metadata.version)) throw new Error('Expected a stable semver skill version')
+      skill.metadata.version = skill.metadata.version.replace(/\d+$/, (patch) => String(Number(patch) + 1))
+      const updated = skill.entrypoint.replace(/(\n  version: )"[^"]+"/, `$1"${skill.metadata.version}"`)
+      if (updated === skill.entrypoint) throw new Error(`${name}: metadata.version not found in SKILL.md`)
+      await writeFile(skill.paths.metadataFile, JSON.stringify(skill.metadata, null, 2) + '\n')
+      await writeFile(join(skill.paths.skillDir, 'SKILL.md'), updated)
+    }
+    await writeOrCheck(skill.paths.outputFile, generateMarkdown(skill), check)
+    console.log(`${check ? 'Checked' : 'Built'} ${name}: ${skill.sections.flatMap((section) => section.rules).length} rules`)
   }
 }
 
-build()
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => { console.error(error); process.exitCode = 1 })
+}

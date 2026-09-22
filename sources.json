@@ -1,0 +1,33 @@
+{
+  "checkedAt": "2026-09-22",
+  "maintainer": "Euler Labs",
+  "sdk": {
+    "package": "@eulerxyz/euler-v2-sdk",
+    "version": "3.4.0",
+    "repository": "https://github.com/euler-xyz/euler-sdks",
+    "commit": "ff224741c251cae7673c5f835dcf3bbccd9d6605",
+    "importedSkillVersion": "1.5.0"
+  },
+  "contracts": [
+    {
+      "repository": "https://github.com/euler-xyz/euler-interfaces",
+      "commit": "d0e9a428523b3de6cb3e6c7a06ad55b6e59223f3"
+    },
+    {
+      "repository": "https://github.com/euler-xyz/evk-periphery",
+      "commit": "26e5b883d42a08e8a0b6b63c72a28050c40bbfdd"
+    },
+    {
+      "repository": "https://github.com/euler-xyz/euler-vault-kit",
+      "commit": "bfb325a6e6ca09613d940b46f72ccfe017353933"
+    },
+    {
+      "repository": "https://github.com/euler-xyz/ethereum-vault-connector",
+      "commit": "838e5f72eaea25fab7d242760245244226096054"
+    },
+    {
+      "repository": "https://github.com/euler-xyz/euler-earn",
+      "commit": "ea3dacc05f4003a1326815429d70d0c77f0dabb4"
+    }
+  ]
+}

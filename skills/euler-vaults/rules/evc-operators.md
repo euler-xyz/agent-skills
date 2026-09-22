@@ -1,138 +1,59 @@
 ---
 title: Delegate Control via Operators
 impact: HIGH
-impactDescription: Delegate control over your accounts to other addresses for automated strategies and position management
-tags: evc, operators, delegation, automation, permissions
+impactDescription: Preserve account authorization when delegating vault operations
+tags: evc, operators, delegation, authorization
 ---
 
 ## Delegate Control via Operators
 
-Operators are addresses authorized to act on behalf of an account. They enable automated strategies like stop-loss, take-profit, and position management without giving up custody.
+An EVC operator can act on behalf of the accounts that authorize it. EVC authenticates the operator contract; the contract must enforce its own caller and execution policy.
 
-**Incorrect (giving full wallet access):**
+**Correct (authorize and revoke one account):**
 
-```solidity
-// NEVER share private keys or use unlimited approvals for automation
-// This is insecure and gives full control
-IERC20(token).approve(automationContract, type(uint256).max);
+```typescript
+await evc.write.setAccountOperator([userAccount, operatorAddress, true]);
+const authorized = await evc.read.isAccountOperatorAuthorized([
+  userAccount, operatorAddress,
+]);
+await evc.write.setAccountOperator([userAccount, operatorAddress, false]);
 ```
 
-**Correct (install operator for specific account):**
+**Correct (owner-controlled withdrawal operator):**
 
+This example accepts calls only from the registered account owner, fixes the operation, and sends underlying assets to that owner. The owner must first authorize the deployed operator through EVC.
+
+<!-- checked-solidity: owner-withdraw-operator -->
 ```solidity
-// Operators can only act on the specific account they're authorized for
-// Account owner can revoke at any time
+import {IEVC} from "ethereum-vault-connector/interfaces/IEthereumVaultConnector.sol";
+import {IERC4626} from "evk/EVault/IEVault.sol";
 
-// Install an operator for a specific sub-account
-IEVC(evc).setAccountOperator(
-    account,           // The account to delegate
-    operatorAddress,   // Address that can act on behalf
-    true               // true = authorize, false = revoke
-);
-
-// The operator can now execute actions on this account via EVC
-```
-
-**Correct (operator executing on behalf of account):**
-
-```solidity
-// Operator contract example - stop-loss implementation
-contract StopLossOperator {
+contract OwnerWithdrawOperator {
     IEVC public immutable evc;
-    
-    function executeStopLoss(
-        address account,
-        address vault,
-        uint256 repayAmount
-    ) external {
-        // Verify conditions are met (price dropped below threshold)
-        require(shouldTriggerStopLoss(account), "Conditions not met");
-        
-        // Execute via EVC on behalf of the account
-        IEVC.BatchItem[] memory items = new IEVC.BatchItem[](2);
-        
-        // Repay debt
+
+    constructor(IEVC evc_) {
+        evc = evc_;
+    }
+
+    function withdrawToOwner(address account, address vault, uint256 assets) external {
+        require(msg.sender == evc.getAccountOwner(account), "Only account owner");
+
+        IEVC.BatchItem[] memory items = new IEVC.BatchItem[](1);
         items[0] = IEVC.BatchItem({
-            onBehalfOfAccount: account,
             targetContract: vault,
-            value: 0,
-            data: abi.encodeCall(IEVault.repay, (repayAmount, account))
-        });
-        
-        // Withdraw collateral to safety
-        items[1] = IEVC.BatchItem({
             onBehalfOfAccount: account,
-            targetContract: collateralVault,
             value: 0,
-            data: abi.encodeCall(IEVault.withdraw, (
-                type(uint256).max, 
-                account, 
-                account
-            ))
+            data: abi.encodeCall(IERC4626.withdraw, (assets, msg.sender, account))
         });
-        
         evc.batch(items);
     }
 }
 ```
 
-**Correct (TypeScript operator management):**
+A selector allowlist alone cannot secure permissionless automation: a permitted withdrawal can still specify an attacker's recipient. Keeper-triggered strategies need an owner-authorized policy covering the account, allowed targets, recipients, amounts, and trigger conditions. Do not expose arbitrary account/target/calldata forwarding.
 
-```typescript
-// Install operator
-await evc.write.setAccountOperator([
-  userAccount,
-  operatorContractAddress,
-  true, // authorize
-]);
+Use exact asset amounts for `withdraw`. To redeem all shares, EVK supports `redeem(type(uint256).max, owner, account)`; health and cash constraints still apply. Send ordinary ERC20 assets to the owner wallet, since EVC virtual sub-accounts cannot sign ERC20 transfers.
 
-// Check if operator is authorized
-const isOperator = await evc.read.isAccountOperatorAuthorized([
-  userAccount,
-  operatorContractAddress,
-]);
+Operators can be revoked by the owner. A controller checks collateral health and releases itself through its own `disableController()` flow after repayment.
 
-// Revoke operator access
-await evc.write.setAccountOperator([
-  userAccount,
-  operatorContractAddress,
-  false, // revoke
-]);
-```
-
-**Correct (operator with limited scope via hooks):**
-
-```solidity
-// Combine with hooks for fine-grained control
-contract LimitedOperator {
-    // Only allow specific operations
-    mapping(bytes4 => bool) public allowedSelectors;
-    
-    function execute(
-        address account,
-        address target,
-        bytes calldata data
-    ) external {
-        bytes4 selector = bytes4(data[:4]);
-        require(allowedSelectors[selector], "Operation not allowed");
-        
-        IEVC.BatchItem[] memory items = new IEVC.BatchItem[](1);
-        items[0] = IEVC.BatchItem({
-            onBehalfOfAccount: account,
-            targetContract: target,
-            value: 0,
-            data: data
-        });
-        
-        IEVC(evc).batch(items);
-    }
-}
-```
-
-Key differences from controllers:
-- Operators can be revoked by account owner at any time
-- Controllers cannot be revoked (only by controller itself when debt is repaid)
-- Operators CAN change collateral/controller sets on behalf of the account
-- Operators are for delegation, controllers are for borrowing
-
-Reference: [EVC Whitepaper - Operators](https://github.com/euler-xyz/ethereum-vault-connector/blob/master/docs/whitepaper.md#operators)
+Reference: [EVC operator authorization](https://github.com/euler-xyz/ethereum-vault-connector/blob/838e5f72eaea25fab7d242760245244226096054/src/EthereumVaultConnector.sol#L758-L800)

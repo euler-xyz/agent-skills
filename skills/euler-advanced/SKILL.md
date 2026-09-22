@@ -4,7 +4,7 @@ description: Advanced features guide for Euler Finance V2 protocol. This skill s
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Euler Advanced Features Agent Skill

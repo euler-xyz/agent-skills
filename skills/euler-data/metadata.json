@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "organization": "Euler Labs",
-  "date": "January 2026",
+  "date": "September 2026",
   "abstract": "Developer tools and data access guide for Euler Finance V2. Covers Lens contracts for querying vault data, subgraph queries for historical data, contract interfaces and ABIs, and no-code vault deployment via Euler Creator.",
   "tldr": "Use AccountLens for positions, VaultLens for vault data, OracleLens for prices. Subgraphs for historical queries. Euler Creator for no-code vault deployment.",
   "triggers": [

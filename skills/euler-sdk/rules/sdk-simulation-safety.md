@@ -1,5 +1,6 @@
 ---
 title: Pre-Execution Simulation and Safety Gates
+section: 2
 impact: CRITICAL
 impactDescription: Catches failing routes and unhealthy positions before users sign
 tags: simulation, batchSimulation, safety, health, state-overrides
@@ -11,10 +12,15 @@ Simulate any non-trivial plan before execution, especially swaps, leverage, debt
 
 **Correct simulation flow:**
 
+<!-- checked-example: sdk-simulation -->
 ```typescript
-const result = await sdk.simulationService.simulateTransactionPlan(
+import type { EulerSDK, TransactionPlan } from '@eulerxyz/euler-v2-sdk';
+import type { Address } from 'viem';
+
+export async function simulate(sdk: EulerSDK, chainId: number, ownerOrAccount: Address, plan: TransactionPlan) {
+const result = await sdk.executionService.simulateTransactionPlan(
   chainId,
-  owner,
+  ownerOrAccount,
   plan,
   {
     stateOverrides: true,
@@ -34,7 +40,11 @@ const result = await sdk.simulationService.simulateTransactionPlan(
 if (!result.canExecute) {
   throw new Error("Simulation failed safety checks");
 }
+return result;
+}
 ```
+
+Simulation and gas estimation use the same plugin processing path as execution. Their account argument is `AddressOrAccount` (`Address | Account`), so passing an already-fetched account can avoid duplicate plugin account fetches.
 
 Gate execution on:
 
@@ -45,4 +55,11 @@ Gate execution on:
 
 If simulation fails, decode and surface actionable messages rather than raw revert bytes.
 
-Reference: `packages/euler-v2-sdk/docs/simulations-and-state-overrides.md`, `docs/decode-smart-contract-errors.md`, `examples/simulations/simulate-deposit-example.ts`
+For UI fan-outs that simulate N candidate plans per user action (swap-quote sweeps, leverage explorers), avoid blowing up RPC + Hermes traffic:
+
+- Pass `stateOverrideOptions` (`SimulationStateOverrideOptions`) to skip overrides the form already validated: `noBalanceOverride: true` when the form gates submit on wallet balance, `wallet.balances`/`wallet.allowances` from the snapshot the form already holds, and `slotHints` pre-fetched once per token with `fetchErc20SlotHints(provider, token, { allowanceSpender })`.
+- Compute `prefetch` once per sweep with `executionService.prefetchPluginDataForPlan(plan, account, chainId)` and thread it through every `prepareTransactionPlan` / `simulatePreparedTransactionPlan` / `estimateGasForPreparedTransactionPlan` / `executePreparedTransactionPlan` call. The Pyth / Keyring plugin work happens once instead of N times.
+
+These options are additive and degrade gracefully — omit them and the SDK falls back to full derivation + per-call plugin fetch.
+
+Reference: [packages/euler-v2-sdk/docs/simulations-and-state-overrides.md](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/docs/simulations-and-state-overrides.md), [docs/execution-service.md](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/docs/execution-service.md), [docs/decode-smart-contract-errors.md](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/docs/decode-smart-contract-errors.md), [examples/simulations/simulate-deposit-example.ts](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/examples/simulations/simulate-deposit-example.ts)

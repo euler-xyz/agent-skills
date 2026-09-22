@@ -1,29 +1,19 @@
-/**
- * Configuration for build paths
- */
+import { readdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
+export const SKILLS_BASE_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../../skills')
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+// Every skill directory participates in build, validation, and extraction.
+export const SKILL_NAMES = readdirSync(SKILLS_BASE_DIR, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+  .map((entry) => entry.name)
+  .sort()
 
-// Base skills directory
-export const SKILLS_BASE_DIR = join(__dirname, '..', '..', '..', 'skills')
+export type SkillName = string
 
-// All skill directories to process
-export const SKILL_NAMES = [
-  'euler-vaults',
-  'euler-irm-oracles',
-  'euler-earn',
-  'euler-advanced',
-  'euler-data',
-] as const
-
-export type SkillName = (typeof SKILL_NAMES)[number]
-
-// Get paths for a specific skill
 export function getSkillPaths(skillName: SkillName) {
+  if (!SKILL_NAMES.includes(skillName)) throw new Error(`Unknown skill: ${skillName}`)
   const skillDir = join(SKILLS_BASE_DIR, skillName)
   return {
     skillDir,
@@ -33,11 +23,18 @@ export function getSkillPaths(skillName: SkillName) {
   }
 }
 
-// Legacy exports for backward compatibility (defaults to euler-vaults)
-export const SKILL_DIR = join(SKILLS_BASE_DIR, 'euler-vaults')
-export const RULES_DIR = join(SKILL_DIR, 'rules')
-export const METADATA_FILE = join(SKILL_DIR, 'metadata.json')
-export const OUTPUT_FILE = join(SKILL_DIR, 'AGENTS.md')
+export function selectedSkills(args = process.argv.slice(2)): string[] {
+  for (const arg of args) {
+    if (arg !== '--' && arg !== '--check' && arg !== '--upgrade-version' && !arg.startsWith('--skill=')) {
+      throw new Error(`Unknown argument: ${arg}`)
+    }
+  }
+  const selections = args.filter((arg) => arg.startsWith('--skill='))
+  if (selections.length > 1) throw new Error('Specify at most one --skill')
+  if (!selections.length) return SKILL_NAMES
+  const name = selections[0].slice('--skill='.length)
+  getSkillPaths(name)
+  return [name]
+}
 
-// Test cases output (combined from all skills)
-export const TEST_CASES_FILE = join(__dirname, '..', 'test-cases.json')
+export const TEST_CASES_FILE = join(dirname(fileURLToPath(import.meta.url)), '../test-cases.json')
