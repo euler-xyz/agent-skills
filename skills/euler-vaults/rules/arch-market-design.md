@@ -22,7 +22,7 @@ IPool(eulerPool).deposit(USDC, amount); // This doesn't exist!
 
 ```solidity
 import {IEVault} from "evk/EVault/IEVault.sol";
-import {IEVC} from "ethereum-vault-connector/interfaces/IEVC.sol";
+import {IEVC} from "ethereum-vault-connector/interfaces/IEthereumVaultConnector.sol";
 
 // Each vault is independent - there can be multiple USDC vaults
 // with different configurations (oracle, IRM, collaterals and risk profile)
@@ -83,9 +83,9 @@ const ltvList = await vault.read.LTVList();
 
 // For each collateral, get LTV configuration
 for (const collateral of ltvList) {
-  const [borrowLTV, liquidationLTV, initialLTV, targetTimestamp, rampDuration] = 
+  const [borrowLTV, liquidationLTV, initialLTV, targetTimestamp, rampDuration] =
     await vault.read.LTVFull([collateral]);
-  
+
   console.log(`Collateral ${collateral}:`);
   console.log(`  Borrow LTV: ${borrowLTV / 100}%`);
   console.log(`  Liquidation LTV: ${liquidationLTV / 100}%`);
@@ -110,7 +110,7 @@ Euler's modular architecture enables various market structures. Choose based on 
 // - USDC vault is the lending/borrowing vault
 // - WETH vault has no borrowing enabled
 
-// Example: Rehypothecation pair (Silo-style)  
+// Example: Rehypothecation pair (Silo-style)
 // - WETH vault: accepts USDC as collateral, lends WETH
 // - USDC vault: accepts WETH as collateral, lends USDC
 // - Assets earn yield while backing loans

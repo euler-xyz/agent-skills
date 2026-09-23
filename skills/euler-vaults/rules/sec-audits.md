@@ -21,16 +21,13 @@ vault.deposit(amount, receiver); // Could be malicious!
 
 ```solidity
 import {GenericFactory} from "evk/GenericFactory/GenericFactory.sol";
-import {IPerspective} from "evk-periphery/Perspectives/implementation/interfaces/IPerspective.sol";
 
 // Check if deployed by official factory (confirms it's a real EVK vault)
 GenericFactory factory = GenericFactory(EVAULT_FACTORY);
 require(factory.isProxy(vaultAddress), "Not EVK vault");
 
-// GovernedPerspective only confirms INITIAL configuration was checked
-// It does NOT guarantee ongoing safety - governors can change parameters anytime
-IPerspective governedPerspective = IPerspective(GOVERNED_PERSPECTIVE);
-bool wasInitiallyVerified = governedPerspective.isVerified(vaultAddress);
+// Factory provenance does not establish safe governance, collateral, or pricing.
+// Check the current implementation and configuration separately.
 
 // IMPORTANT: Users should only interact with vaults they trust
 // - Verify the governor address and who controls it
@@ -48,8 +45,10 @@ const isEVKVault = async (vault: Address): Promise<boolean> => {
 
 // 2. Check who controls the vault (critical!)
 const checkGovernance = async (vault: Address) => {
-  const governor = await evault.read.governorAdmin();
-  
+  const governor = await publicClient.readContract({
+    address: vault, abi: evaultABI, functionName: 'governorAdmin',
+  });
+
   if (governor === zeroAddress) {
     console.log('Ungoverned vault - parameters are immutable');
   } else {
@@ -62,11 +61,12 @@ const checkGovernance = async (vault: Address) => {
 
 // 3. Check current configuration matches your expectations
 const verifyConfig = async (vault: Address) => {
+  const evault = getContract({ address: vault, abi: evaultABI, client: publicClient });
   const oracle = await evault.read.oracle();
   const irm = await evault.read.interestRateModel();
   const [hookTarget, hookedOps] = await evault.read.hookConfig();
   const [supplyCap, borrowCap] = await evault.read.caps();
-  
+
   // Verify these match what you expect for this vault
   console.log('Oracle:', oracle);
   console.log('IRM:', irm);
@@ -87,7 +87,9 @@ When depositing into a vault, you're exposed to the collateral assets that borro
 const collaterals = await vault.read.LTVList();
 for (const collateral of collaterals) {
   const [borrowLTV, liqLTV] = await vault.read.LTVFull([collateral]);
-  const collateralAsset = await IEVault(collateral).asset();
+  const collateralAsset = await publicClient.readContract({
+    address: collateral, abi: evaultABI, functionName: 'asset',
+  });
   console.log(`Collateral: ${collateralAsset}, Borrow LTV: ${borrowLTV/100}%`);
   // Research: Is this a safe, liquid asset? Do you trust it?
 }
@@ -104,6 +106,6 @@ for (const collateral of collaterals) {
 | Governance changes | Unexpected LTV/cap/IRM updates | Monitor events, verify governor identity |
 | Hook exploitation | Custom logic vulnerabilities | Check hook configuration before use |
 
-**Important:** Euler's GovernedPerspective only verifies initial configuration. Risk managers can change vault parameters at any time. Always verify you trust the vault's governor AND the accepted collateral assets before depositing funds.
+Factory provenance identifies a deployment; it is not a risk endorsement. Verify the implementation, current configuration, governor permissions, oracle dependencies, and accepted collateral before depositing. The maintained escrow perspective checks collateral-only properties; governance status is a separate on-chain read.
 
 Reference: [Euler Security](https://docs.euler.finance/security/audits), [EVC Audits](https://github.com/euler-xyz/ethereum-vault-connector/tree/master/audits), [EVK Audits](https://github.com/euler-xyz/euler-vault-kit/tree/master/audits)

@@ -20,7 +20,7 @@ uint256 debt = IEVault(vault).debtOf(account);
 **Correct (using AccountLens for health check):**
 
 ```typescript
-import { AccountLens } from '@eulerxyz/evk-periphery';
+// Resolve AccountLens's address and ABI through the SDK deployment/ABI services.
 
 // Get comprehensive account health info
 // accountLens.getAccountInfo(account, vault) returns AccountInfo struct
@@ -40,8 +40,8 @@ const collateralValueLiq = liquidityInfo.collateralValueLiquidation;
 const liabilityValueLiq = liquidityInfo.liabilityValueLiquidation;
 
 // Calculate health: > 1.0 = healthy, < 1.0 = can be liquidated
-const health = liabilityValueLiq > 0n 
-  ? (collateralValueLiq * BigInt(1e18)) / liabilityValueLiq 
+const health = liabilityValueLiq > 0n
+  ? (collateralValueLiq * BigInt(1e18)) / liabilityValueLiq
   : BigInt(2n ** 256n - 1n); // Infinite if no debt
 
 // timeToLiquidation: estimated SECONDS until liquidation (int256)
@@ -80,8 +80,8 @@ bool isHealthy = collateralValue >= liabilityValue;
 bool isLiquidatable = liabilityValue > 0 && collateralValue < liabilityValue;
 
 // Calculate health factor (1e18 scale)
-uint256 healthFactor = liabilityValue > 0 
-    ? (collateralValue * 1e18) / liabilityValue 
+uint256 healthFactor = liabilityValue > 0
+    ? (collateralValue * 1e18) / liabilityValue
     : type(uint256).max;
 ```
 
@@ -99,7 +99,7 @@ uint256 healthFactor = liabilityValue > 0
 for (uint256 i = 0; i < collaterals.length; i++) {
     console.log("Collateral:", collaterals[i]);
     console.log("Value:", collateralValues[i]);
-    
+
     // Calculate this collateral's contribution percentage
     uint256 totalCollateral = sumArray(collateralValues);
     uint256 contribution = collateralValues[i] * 100 / totalCollateral;
@@ -131,8 +131,8 @@ const [collateralLiq, liabilityLiq] = await vault.read.accountLiquidity([
 ]);
 
 // Calculate both health factors
-const borrowHealth = liabilityBorrow > 0n 
-  ? (collateralBorrow * 10n ** 18n) / liabilityBorrow 
+const borrowHealth = liabilityBorrow > 0n
+  ? (collateralBorrow * 10n ** 18n) / liabilityBorrow
   : MaxUint256;
 
 const liquidationHealth = liabilityLiq > 0n
@@ -174,9 +174,9 @@ IEVault(controller).disableController();
 
 ```typescript
 const batchItems: BatchItem[] = [
-  // Repay all debt
+  // Repay all debt using the owner wallet's underlying tokens and allowance
   {
-    onBehalfOfAccount: account,
+    onBehalfOfAccount: ownerAddress,
     targetContract: controllerVault,
     value: 0n,
     data: encodeFunctionData({
@@ -203,14 +203,16 @@ const batchItems: BatchItem[] = [
     value: 0n,
     data: encodeFunctionData({
       abi: evaultABI,
-      functionName: 'withdraw',
-      args: [MaxUint256, account, account],
+      functionName: 'redeem',
+      args: [MaxUint256, ownerAddress, account],
     }),
   },
 ];
 
-await evc.batch(batchItems);
+await evc.write.batch([batchItems]);
 ```
+
+The owner wallet must hold enough underlying tokens and approve the debt vault. The repayment's EVC caller is the payer; its receiver argument identifies the debtor. Collateral redemption runs as the position account and sends assets to the owner wallet. EVK supports the all-shares sentinel on `redeem`, not on `withdraw`; sufficient vault liquidity is still required.
 
 **Understanding checkAccountStatus and checkVaultStatus (EVC internals):**
 
@@ -239,6 +241,6 @@ Time to Liquidation (TTL) - **unit: seconds**, **precision: ±1 day** (int256):
 - ⚠️ TTL only considers **Euler lending/borrowing rates** - does NOT include external yield (wstETH, DAI etc.)
 - ⚠️ TTL assumes **static prices** - real price volatility may cause liquidation sooner
 
-See also: [Lens Contracts](tools-lens) - AccountLens provides `getAccountLiquidityInfo()` and `getTimeToLiquidation()` for comprehensive health monitoring.
+See also: [Lens Contracts](https://github.com/euler-xyz/agent-skills/blob/main/skills/euler-data/rules/tools-lens.md) - AccountLens provides `getAccountLiquidityInfo()` and `getTimeToLiquidation()` for comprehensive health monitoring.
 
 Reference: [EVK Risk Manager Module](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/RiskManager.sol)

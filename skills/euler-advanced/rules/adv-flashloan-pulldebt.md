@@ -18,7 +18,7 @@ contract BadFlashBorrower {
         IEVault(vault).flashLoan(amount, "");
         // Missing repayment! This will revert with E_FlashLoanNotRepaid
     }
-    
+
     function onFlashLoan(bytes memory) external {
         // Trying to keep the funds - WILL FAIL
         // Vault checks balance after callback returns
@@ -39,12 +39,12 @@ contract MyFlashBorrower is IFlashLoan {
         // Request flash loan - vault transfers assets to this contract
         IEVault(vault).flashLoan(amount, abi.encode(/* your data */));
     }
-    
+
     // Vault calls this after transferring assets
     function onFlashLoan(bytes memory data) external override {
         // Decode your data
         // ... do arbitrage, liquidation, etc ...
-        
+
         // MUST return assets to vault before function ends
         // Vault checks: balanceOf(vault) >= originalBalance
         IERC20(asset).transfer(msg.sender, amount);

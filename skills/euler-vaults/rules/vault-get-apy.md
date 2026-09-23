@@ -18,30 +18,23 @@ uint256 rate = IEVault(vault).interestRate();
 // rate = 1000000000 (this is NOT 100% APY!)
 ```
 
-**Correct (using VaultLens for complete APY data):**
+**Correct (using UtilsLens for current APYs):**
 
 ```typescript
-import { VaultLens } from '@eulerxyz/evk-periphery';
+import { formatUnits, parseAbi } from 'viem';
 
-// VaultLens provides pre-calculated APY values
-const vaultInfo = await vaultLens.getVaultInfoDynamic(vaultAddress);
-
-// Access the IRM info which contains calculated APYs
-const irmInfo = vaultInfo.irmInfo;
-const interestRateInfo = irmInfo.interestRateInfo[0];
-
-// borrowAPY - what borrowers pay (already converted to annual %)
-const borrowAPY = interestRateInfo.borrowAPY;
-
-// supplyAPY - what suppliers earn (accounts for utilization and fees)
-const supplyAPY = interestRateInfo.supplyAPY;
-
-// borrowSPY - raw per-second rate if you need it
-const borrowSPY = interestRateInfo.borrowSPY;
-
-console.log(`Supply APY: ${supplyAPY / 1e25}%`);
-console.log(`Borrow APY: ${borrowAPY / 1e25}%`);
+const deployment = sdk.deploymentService.getDeployment(chainId);
+const [borrowAPY, supplyAPY] = await publicClient.readContract({
+  address: deployment.addresses.lensAddrs.utilsLens,
+  abi: parseAbi(['function getAPYs(address vault) view returns (uint256 borrowAPY, uint256 supplyAPY)']),
+  functionName: 'getAPYs',
+  args: [vaultAddress],
+});
+console.log(`Supply APY: ${formatUnits(supplyAPY, 25)}%`);
+console.log(`Borrow APY: ${formatUnits(borrowAPY, 25)}%`);
 ```
+
+APYs use 1e27 scaling. Formatting with 25 decimals converts the fraction to a percentage without mixing bigint and number arithmetic.
 
 **Correct (calculating APY from SPY manually in Solidity):**
 
@@ -54,7 +47,8 @@ uint256 constant ONE = 1e27; // RAY precision
 // APY = (1 + SPY)^SECONDS_PER_YEAR - 1
 function calculateAPY(uint256 borrowSPY) public pure returns (uint256) {
     // Use RPow for precise exponentiation
-    uint256 compounded = RPow.rpow(ONE + borrowSPY, SECONDS_PER_YEAR, ONE);
+    (uint256 compounded, bool overflow) = RPow.rpow(ONE + borrowSPY, SECONDS_PER_YEAR, ONE);
+    require(!overflow, "APY overflow");
     return compounded - ONE;
 }
 
@@ -68,7 +62,7 @@ function calculateSupplyAPY(
     uint256 borrowAPY = calculateAPY(borrowSPY);
     uint256 totalAssets = totalCash + totalBorrows;
     if (totalAssets == 0) return 0;
-    
+
     uint256 utilization = (totalBorrows * ONE) / totalAssets;
     uint256 feeAdjusted = borrowAPY * (1e4 - interestFee) / 1e4;
     return (feeAdjusted * utilization) / ONE;
@@ -86,6 +80,6 @@ console.log(`Borrow APY: ${formatUnits(borrowAPY, 25)}%`);
 console.log(`Supply APY: ${formatUnits(supplyAPY, 25)}%`);
 ```
 
-See also: [Lens Contracts for Data Queries](tools-lens) for comprehensive Lens documentation.
+See also: [Lens Contracts for Data Queries](https://github.com/euler-xyz/agent-skills/blob/main/skills/euler-data/rules/tools-lens.md) for comprehensive Lens documentation.
 
 Reference: [VaultLens.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/Lens/VaultLens.sol)

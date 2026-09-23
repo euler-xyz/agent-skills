@@ -4,7 +4,7 @@ description: Core guide for interacting with Euler Finance V2 protocol. This ski
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Euler Finance Agent Skill

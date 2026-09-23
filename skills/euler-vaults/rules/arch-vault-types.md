@@ -47,32 +47,9 @@ vault.deposit(amount, receiver);
 vault.borrow(amount, receiver);
 ```
 
-**Limited Governor Pattern:**
+**Limited governance permissions:**
 
-Instead of a full EOA or multisig as governor, you can set a **limited governor contract** that only allows specific parameter changes. This provides a middle ground between full governance and complete immutability.
-
-```solidity
-// Example: CapRiskSteward only allows cap adjustments within limits
-import {CapRiskSteward} from "evk-periphery/Governor/CapRiskSteward.sol";
-
-// Deploy a limited governor that can only adjust caps
-CapRiskSteward steward = new CapRiskSteward(
-    evc,
-    admin,           // Who can call the steward
-    3 days,          // Cooldown between adjustments
-    0.1e18           // Max 10% change per adjustment
-);
-
-// Set the steward as the vault's governor
-vault.setGovernorAdmin(address(steward));
-
-// Now only cap changes (within limits) are possible
-// Other governance functions like setLTV, setIRM will revert
-steward.setSupplyCap(vaultAddress, newSupplyCap);
-steward.setBorrowCap(vaultAddress, newBorrowCap);
-```
-
-This pattern is useful when you want restricted, predictable governance rather than full control or complete immutability.
+`GovernorAccessControl` can give a CapRiskSteward bounded cap and IRM permissions while retaining other governance roles. The steward forwards calls through the governor and identifies the target vault in trailing calldata. See [Risk Managers](https://github.com/euler-xyz/agent-skills/blob/main/skills/euler-vaults/rules/risk-managers.md) for the constructor, permission layers, and call encoding.
 
 ### 2. Ungoverned Vaults
 
@@ -110,11 +87,11 @@ address escrowVault = perspective.singletonLookup(assetAddress);
 if (escrowVault == address(0)) {
     bytes memory trailingData = abi.encodePacked(asset, address(0), address(0));
     escrowVault = GenericFactory(factory).createProxy(address(0), true, trailingData);
-    
+
     // Escrow vaults have minimal config and renounced governance
     IEVault(escrowVault).setHookConfig(address(0), 0);
     IEVault(escrowVault).setGovernorAdmin(address(0));
-    
+
     // Verify in perspective so that others can reuse this vault later
     perspective.perspectiveVerify(escrowVault, true);
 }
@@ -129,42 +106,20 @@ if (escrowVault == address(0)) {
 // - Governance renounced (address(0))
 ```
 
-**Correct (using Perspectives to verify vault type):**
+**Correct (separating provenance, governance, and escrow classification):**
 
 ```typescript
-import { getContract } from 'viem';
+const isFactoryVault = await evaultFactory.read.isProxy([vaultAddress]);
+if (!isFactoryVault) throw new Error('Unknown vault provenance');
 
-// Perspectives verify vault properties
-const governedPerspective = getContract({
-  address: governedPerspectiveAddress,
-  abi: perspectiveABI,
-  client: publicClient,
+const governor = await publicClient.readContract({
+  address: vaultAddress, abi: evaultABI, functionName: 'governorAdmin',
 });
-
-const escrowPerspective = getContract({
-  address: escrowPerspectiveAddress,
-  abi: perspectiveABI,
-  client: publicClient,
-});
-
-// Check if vault is in a perspective
-const isGoverned = await governedPerspective.read.isVerified([vaultAddress]);
+const isUngoverned = governor === zeroAddress;
 const isEscrow = await escrowPerspective.read.isVerified([vaultAddress]);
-
-// Check governance status directly
-const vault = getContract({
-  address: vaultAddress,
-  abi: evaultABI,
-  client: publicClient,
-});
-const governor = await vault.read.governorAdmin();
-const isUngoverned = governor === '0x0000000000000000000000000000000000000000';
-
-// Perspectives provide trust guarantees:
-// - GovernedPerspective: whitelisted by Euler
-// - EscrowedCollateralPerspective: verified collateral-only vault
-// - EVKFactoryPerspective: deployed by official factory
 ```
+
+Resolve the factory and maintained `EscrowedCollateralPerspective` addresses from current chain deployments. Factory provenance does not endorse a vault's risk configuration. In SDK results, use the `isEscrow` classification rather than inferring escrow status solely from `vaultType`; governance is a separate property.
 
 | Feature | Governed Vault | Ungoverned Vault | Escrowed Collateral |
 |---------|----------------|------------------|---------------------|

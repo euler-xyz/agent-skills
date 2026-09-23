@@ -26,40 +26,36 @@ earn.reallocate(
 
 ```solidity
 // Check available liquidity in each strategy
-function getStrategyLiquidity(address strategy) 
-    public view returns (uint256) 
+function getStrategyLiquidity(address strategy)
+    public view returns (uint256)
 {
-    // For EVK vaults, check cash available
-    try IEVault(strategy).cash() returns (uint256 cash) {
-        return cash;
-    } catch {
-        // For generic ERC-4626, estimate via maxWithdraw
-        return IERC4626(strategy).maxWithdraw(address(earn));
-    }
+    return IERC4626(strategy).maxWithdraw(address(earn));
 }
 
 // Reallocate respecting liquidity
 uint256 availableLiquidity = getStrategyLiquidity(fromStrategy);
-uint256 toWithdraw = min(desiredAmount, availableLiquidity);
+uint256 currentAllocation = earn.expectedSupplyAssets(IERC4626(fromStrategy));
+uint256 toWithdraw = min(desiredAmount, min(availableLiquidity, currentAllocation));
+// Also bound toWithdraw by destination cap headroom and maxDeposit before sending.
 
 // reallocate takes MarketAllocation[] struct array
 // struct MarketAllocation { IERC4626 id; uint256 assets; }
-// 
+//
 // CRITICAL: The assets field specifies the TARGET allocation, not the delta!
 // - assets = 0: Withdraw everything from this strategy
-// - assets = N: Leave exactly N assets in this strategy  
-// - assets = type(uint256).max: Deposit all available cash into this strategy
+// - assets = N: Leave exactly N assets in this strategy
+// - assets = type(uint256).max: Deposit the remaining assets withdrawn by this reallocation
 //
 // Order matters: withdrawals should come before deposits
 
 MarketAllocation[] memory allocations = new MarketAllocation[](2);
 allocations[0] = MarketAllocation({
     id: IERC4626(fromStrategy),
-    assets: 0  // Target: leave 0 assets (withdraws everything)
+    assets: currentAllocation - toWithdraw  // Target after the bounded withdrawal
 });
 allocations[1] = MarketAllocation({
     id: IERC4626(toStrategy),
-    assets: type(uint256).max  // Target: deposit all available cash
+    assets: type(uint256).max  // Target: deposit the assets withdrawn above
 });
 
 earn.reallocate(allocations);
@@ -90,7 +86,7 @@ await earn.write.setSupplyQueue([newSupplyQueue]);
 // Get current allocations
 uint256[] memory allocations = new uint256[](strategies.length);
 for (uint256 i = 0; i < strategies.length; i++) {
-    allocations[i] = IERC4626(strategies[i]).balanceOf(address(earn));
+    allocations[i] = earn.expectedSupplyAssets(IERC4626(strategies[i]));
 }
 
 // updateWithdrawQueue takes uint256[] indexes, NOT addresses
@@ -123,7 +119,7 @@ if (currentAllocation > newLowerCap) {
         id: IERC4626(safeStrategy),
         assets: type(uint256).max  // Target: deposit all freed assets
     });
-    
+
     earn.reallocate(allocations);
 }
 ```
@@ -150,67 +146,30 @@ uint256[] memory newIndexes = getQueueWithoutBrokenStrategy();
 earn.updateWithdrawQueue(newIndexes);
 ```
 
-**Correct (monitoring and rebalancing):**
+**Correct (asset-denominated reallocation targets):**
 
+Read each allocation with `earn.read.expectedSupplyAssets([strategy])`. This converts EulerEarn's tracked strategy shares to underlying assets; raw `balanceOf` values are shares and can include untracked donations. Read source `maxWithdraw(earnAddress)`, destination `maxDeposit(earnAddress)`, and destination `config().cap` at a consistent block.
+
+<!-- checked-example: earn-targets -->
 ```typescript
-interface StrategyMetrics {
-  address: Address;
-  allocation: bigint;
-  apy: number;
-  utilization: number;
-  liquidity: bigint;
-}
-
-async function getStrategyMetrics(
-  earn: Address,
-  strategy: Address
-): Promise<StrategyMetrics> {
-  const allocation = await IERC4626(strategy).balanceOf(earn);
-  const vaultInfo = await vaultLens.getVaultInfoDynamic(strategy);
-  
-  return {
-    address: strategy,
-    allocation,
-    apy: vaultInfo.irmInfo.interestRateInfo[0].supplyAPY / 1e25,
-    utilization: vaultInfo.totalBorrowed / vaultInfo.totalAssets,
-    liquidity: vaultInfo.totalCash,
-  };
-}
-
-async function optimizeAllocation(earn: Address) {
-  const strategies = await earn.withdrawQueue();
-  const metrics = await Promise.all(
-    strategies.map(s => getStrategyMetrics(earn, s))
-  );
-  
-  // Sort by APY descending
-  const byApy = [...metrics].sort((a, b) => b.apy - a.apy);
-  
-  // Reallocate to higher-yield strategies (respecting caps and liquidity)
-  for (const highYield of byApy.slice(0, 3)) {
-    // config() returns { balance, cap, enabled, removableAt }
-    const strategyConfig = await earn.read.config([highYield.address]);
-    const headroom = strategyConfig.cap - highYield.allocation;
-    
-    if (headroom > MIN_REALLOCATION) {
-      // Find lower-yield strategy to pull from
-      const lowYield = byApy[byApy.length - 1];
-      const moveAmount = min(headroom, lowYield.liquidity);
-      
-      if (moveAmount > MIN_REALLOCATION) {
-        // Reallocate: reduce low yield, increase high yield
-        // type(uint256).max in TypeScript = 2n ** 256n - 1n
-        const MAX_UINT256 = 2n ** 256n - 1n;
-        const allocations = [
-          { id: lowYield.address, assets: lowYield.allocation - moveAmount },
-          { id: highYield.address, assets: MAX_UINT256 },
-        ];
-        await earn.write.reallocate([allocations]);
-      }
-    }
-  }
+export function reallocationTargets(
+  desired: bigint,
+  sourceAssets: bigint,
+  sourceMaxWithdraw: bigint,
+  targetAssets: bigint,
+  targetCap: bigint,
+  targetMaxDeposit: bigint,
+) {
+  const inputs = [desired, sourceAssets, sourceMaxWithdraw, targetAssets, targetCap, targetMaxDeposit];
+  if (inputs.some(value => value < 0n)) throw new Error('Negative asset amount');
+  const headroom = targetCap > targetAssets ? targetCap - targetAssets : 0n;
+  const amount = [desired, sourceAssets, sourceMaxWithdraw, headroom, targetMaxDeposit]
+    .reduce((a, b) => a < b ? a : b);
+  return { amount, sourceTarget: sourceAssets - amount, targetTarget: targetAssets + amount };
 }
 ```
+
+Skip zero movements and identical source/destination strategies. Encode `[{ id: source, assets: sourceTarget }, { id: destination, assets: targetTarget }]`, then simulate immediately before submitting. Withdrawals must precede deposits; interest, rounding, liquidity, and cap changes can invalidate a previously calculated target. For a single-source move, `type(uint256).max` on the destination deposits the actual amount withdrawn; ensure its cap and liquidity constraints can accept it. APY values use 1e27 scaling (`formatUnits(supplyAPY, 25)` gives percent), and utilization needs a zero-total-assets guard before division.
 
 Key considerations:
 - Only allocators/curators/owner can reallocate
@@ -363,6 +322,6 @@ publicAllocator.transferFee(earnVault, payable(feeRecipient));
 // NotEnoughSupply: Strategy doesn't have enough assets
 ```
 
-See also: [Lens Contracts](tools-lens) - EulerEarnVaultLens provides `getVaultInfoFull()` to query all strategies and their allocations.
+See also: [Lens Contracts](https://github.com/euler-xyz/agent-skills/blob/main/skills/euler-data/rules/tools-lens.md) - EulerEarnVaultLens provides `getVaultInfoFull()` to query all strategies and their allocations.
 
 Reference: [EulerEarn Roles](https://github.com/euler-xyz/euler-earn#roles), [PublicAllocator.sol](https://github.com/euler-xyz/euler-earn/blob/master/src/PublicAllocator.sol)

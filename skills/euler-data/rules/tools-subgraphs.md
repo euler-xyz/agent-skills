@@ -82,7 +82,7 @@ query GetVaultsFromFactory($factory: Bytes!) {
 # Note: Indexed by address prefix (first 19 bytes)
 # This groups main account + all 256 sub-accounts together
 query GetActiveAccounts($first: Int = 100) {
-  trackingActiveAccounts(first: $first, where: { deposits_not: [], borrows_not: [] }) {
+  trackingActiveAccounts(first: $first, where: { or: [{ deposits_not: [] }, { borrows_not: [] }] }) {
     id
     addressPrefix
     deposits
@@ -186,18 +186,18 @@ async function getVaultFactory(vaultAddress: string): Promise<string | null> {
       }
     }
   `;
-  
-  const result = await request(SUBGRAPH_URL, query, { 
-    id: vaultAddress.toLowerCase() 
+
+  const result = await request(SUBGRAPH_URL, query, {
+    id: vaultAddress.toLowerCase()
   });
-  
+
   return result.vault?.factory ?? null;
 }
 
 // Get all active positions for an account (including sub-accounts)
 async function getAccountPositions(account: string) {
   const prefix = getAddressPrefix(account);
-  
+
   const query = gql`
     query GetPositions($prefix: Bytes!) {
       trackingVaultBalances(where: { addressPrefix: $prefix }) {
@@ -209,14 +209,14 @@ async function getAccountPositions(account: string) {
       }
     }
   `;
-  
+
   return request(SUBGRAPH_URL, query, { prefix });
 }
 
 // Check if an account has any active positions
 async function isAccountActive(account: string): Promise<boolean> {
   const prefix = getAddressPrefix(account);
-  
+
   const query = gql`
     query CheckActive($prefix: Bytes!) {
       trackingActiveAccount(id: $prefix) {
@@ -225,23 +225,25 @@ async function isAccountActive(account: string): Promise<boolean> {
       }
     }
   `;
-  
+
   const result = await request(SUBGRAPH_URL, query, { prefix });
   const active = result.trackingActiveAccount;
-  
-  return active && (active.deposits.length > 0 || active.borrows.length > 0);
+
+  return Boolean(active && (active.deposits.length > 0 || active.borrows.length > 0));
 }
 ```
+
+For current application state, prefer the SDK's Data V3 and on-chain adapters, which handle population and diagnostics. Direct subgraph queries remain useful for indexed discovery and historical activity; confirm the deployment's indexing lag and schema.
 
 **Combining Subgraph with Lens Contracts:**
 
 ```typescript
 import { getContract } from 'viem';
 import { request, gql } from 'graphql-request';
-import lens from '@eulerxyz/euler-interfaces/addresses/1/LensAddresses.json';
-import accountLensABI from '@eulerxyz/euler-interfaces/abis/AccountLens.json';
+const lens = sdk.deploymentService.getDeployment(chainId).addresses.lensAddrs;
+const accountLensABI = await sdk.abiService.fetchABI(chainId, 'AccountLens');
 
-// Best practice: 
+// Best practice:
 // 1. Use subgraph to discover active accounts
 // 2. Use Lens contracts for detailed, real-time position data
 
@@ -269,15 +271,19 @@ for (const tracking of activeAccounts.trackingActiveAccounts) {
     // positionId is account + vault concatenated
     const account = '0x' + positionId.slice(2, 42);
     const vault = '0x' + positionId.slice(42);
-    
+
     // Real-time health check via Lens
     const liquidityInfo = await accountLens.read.getAccountLiquidityInfo([
       account,
       vault
     ]);
-    
+
     console.log(`Account ${account} in vault ${vault}:`);
-    console.log(`  Health: ${liquidityInfo.collateralValueLiquidation / liquidityInfo.liabilityValueLiquidation}`);
+    if (liquidityInfo.queryFailure) throw new Error('Liquidity query failed');
+    console.log({
+      collateral: liquidityInfo.collateralValueLiquidation,
+      liability: liquidityInfo.liabilityValueLiquidation,
+    });
     console.log(`  TTL: ${liquidityInfo.timeToLiquidation}`);
   }
 }

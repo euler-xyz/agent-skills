@@ -79,9 +79,9 @@ import {BaseHookTarget} from "evk-periphery/HookTarget/BaseHookTarget.sol";
 
 contract CustomHook is BaseHookTarget {
     mapping(address => bool) public allowed;
-    
+
     constructor(address factory) BaseHookTarget(factory) {}
-    
+
     // Hook receives same calldata as vault function
     // with the authenticated caller appended
     function deposit(uint256 assets, address receiver) external view {
@@ -89,12 +89,12 @@ contract CustomHook is BaseHookTarget {
         require(allowed[caller], "Not allowed");
         // If this doesn't revert, the deposit proceeds
     }
-    
+
     function borrow(uint256 assets, address receiver) external view {
         address caller = _msgSender();
         require(allowed[caller], "Not allowed");
     }
-    
+
     // Fallback for other operations - allow them
     fallback() external {}
 }
@@ -108,21 +108,21 @@ contract CustomHook is BaseHookTarget {
 
 contract InvariantChecker is BaseHookTarget {
     constructor(address factory) BaseHookTarget(factory) {}
-    
+
     // Called when EVC checks vault status
     function checkVaultStatus() external view {
         IEVault vault = IEVault(msg.sender);
-        
+
         // Example: ensure utilization stays below 95%
         uint256 totalAssets = vault.totalAssets();
         uint256 totalBorrows = vault.totalBorrows();
-        
+
         if (totalAssets > 0) {
             uint256 utilization = (totalBorrows * 1e18) / totalAssets;
             require(utilization < 0.95e18, "Utilization too high");
         }
     }
-    
+
     fallback() external {}
 }
 ```

@@ -1,29 +1,20 @@
 # EulerEarn Agent Skill
 
-**Version 1.0.0**  
-Euler Labs  
-January 2026
+**Version 1.1.0**
 
-> **Note:**  
-> This document is for agents and LLMs to follow when interacting with  
-> EulerEarn yield aggregation. It covers vault creation, strategy management,  
-> roles, and PublicAllocator.
+Euler Labs
 
----
+September 2026
 
-## Abstract
+> Generated from SKILL.md, metadata.json, and rules/. Edit those sources and run pnpm build.
 
 EulerEarn yield aggregation guide for Euler Finance. Covers creating yield aggregation meta-vaults, managing strategies, role-based access control (owner, curator, guardian, allocator), and PublicAllocator for permissionless reallocation.
 
----
-
 ## Table of Contents
 
-1. [EulerEarn Yield Aggregation](#1-eulerearn-yield-aggregation) — **MEDIUM**
-   - 1.1 [Create an EulerEarn Vault](#11-create-an-eulerearn-vault)
-   - 1.2 [Manage EulerEarn Strategies](#12-manage-eulerearn-strategies)
-
----
+- [EulerEarn Yield Aggregation](#1-eulerearn-yield-aggregation)
+  - [Create an EulerEarn Vault](#earn-create-vault-create-an-eulerearn-vault)
+  - [Manage EulerEarn Strategies](#earn-manage-strategies-manage-eulerearn-strategies)
 
 ## 1. EulerEarn Yield Aggregation
 
@@ -31,13 +22,13 @@ EulerEarn yield aggregation guide for Euler Finance. Covers creating yield aggre
 
 EulerEarn yield aggregation guide for Euler Finance. Covers creating yield aggregation meta-vaults, managing strategies across multiple ERC-4626 vaults, role-based access control (owner, curator, guardian, allocator), and PublicAllocator for permissionless reallocation.
 
-### 1.1 Create an EulerEarn Vault
+### earn-create-vault Create an EulerEarn Vault
 
 **Impact: MEDIUM (Deploy yield aggregation vaults)**
 
 EulerEarn vaults are yield aggregation meta-vaults that allocate deposited assets across multiple ERC-4626 strategy vaults. They provide passive yield optimization with role-based governance.
 
-**Incorrect: deploying without proper initialization**
+**Incorrect (deploying without proper initialization):**
 
 ```solidity
 // Don't deploy EulerEarn directly - use factory
@@ -45,7 +36,7 @@ EulerEarn vault = new EulerEarn();
 // Missing proper initialization, not tracked by factory
 ```
 
-**Correct: deploy via EulerEarnFactory**
+**Correct (deploy via EulerEarnFactory):**
 
 ```solidity
 import {EulerEarnFactory} from "euler-earn/EulerEarnFactory.sol";
@@ -65,7 +56,7 @@ address earnVault = EulerEarnFactory(factory).createEulerEarn(
 IEulerEarn earn = IEulerEarn(earnVault);
 ```
 
-**Correct: configure vault after deployment**
+**Correct (configure vault after deployment):**
 
 ```solidity
 // Set fee (max 50%)
@@ -89,7 +80,7 @@ earn.setCurator(curatorAddress);
 earn.setIsAllocator(allocatorAddress, true);
 ```
 
-**Correct: add strategy vaults**
+**Correct (add strategy vaults):**
 
 ```solidity
 // Strategy vaults must be ERC-4626 compliant
@@ -116,13 +107,13 @@ earn.setSupplyQueue(newSupplyQueue);
 // Updated automatically, but can be reordered
 ```
 
-**Correct: TypeScript vault creation**
+**Correct (TypeScript vault creation):**
 
 ```typescript
-import { encodeFunctionData } from 'viem';
+import { encodeFunctionData, parseEventLogs } from 'viem';
 
 // Deploy earn vault via factory
-const earnVaultAddress = await eulerEarnFactory.write.createEulerEarn([
+const creationHash = await eulerEarnFactory.write.createEulerEarn([
   ownerAddress,          // initialOwner
   0n,                    // initialTimelock
   usdcAddress,           // asset
@@ -131,7 +122,19 @@ const earnVaultAddress = await eulerEarnFactory.write.createEulerEarn([
   '0x0000000000000000000000000000000000000000000000000000000000000000', // salt
 ]);
 
-// Configure in batch
+// A write returns a transaction hash. Read the deployed address from its receipt.
+const receipt = await publicClient.waitForTransactionReceipt({ hash: creationHash });
+if (receipt.status !== 'success') throw new Error('Vault creation reverted');
+const events = parseEventLogs({
+  abi: eulerEarnFactoryABI,
+  eventName: 'CreateEulerEarn',
+  logs: receipt.logs.filter(log =>
+    log.address.toLowerCase() === eulerEarnFactory.address.toLowerCase()),
+});
+if (events.length !== 1) throw new Error('Expected one factory creation event');
+const earnVaultAddress = events[0].args.eulerEarn;
+
+// Configure the deployed vault
 const setupCalls = [
   encodeFunctionData({
     abi: eulerEarnABI,
@@ -141,7 +144,7 @@ const setupCalls = [
   encodeFunctionData({
     abi: eulerEarnABI,
     functionName: 'setFee',
-    args: [0.1e18], // 10%
+    args: [100_000_000_000_000_000n], // 10%
   }),
   encodeFunctionData({
     abi: eulerEarnABI,
@@ -157,28 +160,71 @@ const setupCalls = [
 
 // Execute setup
 for (const call of setupCalls) {
-  await ownerWallet.sendTransaction({
+  const setupHash = await ownerWallet.sendTransaction({
     to: earnVaultAddress,
     data: call,
   });
+  const setupReceipt = await publicClient.waitForTransactionReceipt({ hash: setupHash });
+  if (setupReceipt.status !== 'success') throw new Error('Vault setup reverted');
 }
 ```
 
 **Role permissions overview:**
 
 | Role | Capabilities |
-
 |------|-------------|
-
 | Owner | All actions, set other roles, set fee |
-
 | Curator | Manage caps, submit removals, do allocator actions |
-
 | Guardian | Revoke pending changes, emergency stops |
-
 | Allocator | Set queues, reallocate funds |
 
 **Non-borrowable idle vault setup:**
+
+```solidity
+// For guaranteed liquidity, add a non-borrowable "idle" strategy
+// This ensures some funds are always withdrawable
+
+// Create or use an Escrow Vault (non-borrowable EVK)
+address escrowVault = createEscrowVault(asset);
+
+// Add to EulerEarn with infinite cap
+earn.submitCap(IERC4626(escrowVault), type(uint184).max);
+// Wait for timelock...
+earn.acceptCap(IERC4626(escrowVault));
+
+// Put at end of supply queue (last priority)
+// Funds only go here if other strategies are full
+```
+
+---
+
+#### EulerEarnFactory Query Functions
+
+The factory provides useful functions for discovering and validating EulerEarn vaults:
+
+```solidity
+import {EulerEarnFactory} from "euler-earn/EulerEarnFactory.sol";
+
+EulerEarnFactory factory = EulerEarnFactory(factoryAddress);
+
+// Check if an address is an EulerEarn vault deployed by this factory
+bool isEarnVault = factory.isVault(vaultAddress);
+
+// Check if a strategy is allowed (verified by perspective OR is an EulerEarn vault)
+// Strategies must pass this check to be added to an EulerEarn vault
+bool allowed = factory.isStrategyAllowed(strategyAddress);
+
+// Get the perspective used for strategy verification
+address perspective = factory.supportedPerspective();
+
+// Get total number of deployed vaults
+uint256 count = factory.getVaultListLength();
+
+// Get a slice of deployed vaults (for pagination)
+// Use type(uint256).max for end to get all remaining
+address[] memory vaults = factory.getVaultListSlice(0, 10);  // First 10
+address[] memory allVaults = factory.getVaultListSlice(0, type(uint256).max);  // All
+```
 
 ```typescript
 // TypeScript: Query factory for deployed vaults
@@ -196,19 +242,15 @@ const MAX_UINT256 = 2n ** 256n - 1n;
 const allVaults = await factory.read.getVaultListSlice([0n, MAX_UINT256]);
 ```
 
----
+Reference: [EulerEarn README](https://github.com/euler-xyz/euler-earn#readme), [EulerEarnFactory.sol](https://github.com/euler-xyz/euler-earn/blob/master/src/EulerEarnFactory.sol)
 
-The factory provides useful functions for discovering and validating EulerEarn vaults:
-
-Reference: [https://github.com/euler-xyz/euler-earn#readme](https://github.com/euler-xyz/euler-earn#readme), [https://github.com/euler-xyz/euler-earn/blob/master/src/EulerEarnFactory.sol](https://github.com/euler-xyz/euler-earn/blob/master/src/EulerEarnFactory.sol)
-
-### 1.2 Manage EulerEarn Strategies
+### earn-manage-strategies Manage EulerEarn Strategies
 
 **Impact: MEDIUM (Optimize yield through strategy allocation)**
 
 Strategy management involves adjusting allocations across ERC-4626 vaults to optimize yield while maintaining risk parameters. This is done by curators and allocators.
 
-**Incorrect: wrong function signature and no liquidity check**
+**Incorrect (wrong function signature and no liquidity check):**
 
 ```solidity
 // ERROR: Wrong signature! reallocate takes MarketAllocation[] struct array
@@ -221,50 +263,46 @@ earn.reallocate(
 // where MarketAllocation has { IERC4626 id; uint256 assets; }
 ```
 
-**Correct: check liquidity before reallocating**
+**Correct (check liquidity before reallocating):**
 
 ```solidity
 // Check available liquidity in each strategy
-function getStrategyLiquidity(address strategy) 
-    public view returns (uint256) 
+function getStrategyLiquidity(address strategy)
+    public view returns (uint256)
 {
-    // For EVK vaults, check cash available
-    try IEVault(strategy).cash() returns (uint256 cash) {
-        return cash;
-    } catch {
-        // For generic ERC-4626, estimate via maxWithdraw
-        return IERC4626(strategy).maxWithdraw(address(earn));
-    }
+    return IERC4626(strategy).maxWithdraw(address(earn));
 }
 
 // Reallocate respecting liquidity
 uint256 availableLiquidity = getStrategyLiquidity(fromStrategy);
-uint256 toWithdraw = min(desiredAmount, availableLiquidity);
+uint256 currentAllocation = earn.expectedSupplyAssets(IERC4626(fromStrategy));
+uint256 toWithdraw = min(desiredAmount, min(availableLiquidity, currentAllocation));
+// Also bound toWithdraw by destination cap headroom and maxDeposit before sending.
 
 // reallocate takes MarketAllocation[] struct array
 // struct MarketAllocation { IERC4626 id; uint256 assets; }
-// 
+//
 // CRITICAL: The assets field specifies the TARGET allocation, not the delta!
 // - assets = 0: Withdraw everything from this strategy
-// - assets = N: Leave exactly N assets in this strategy  
-// - assets = type(uint256).max: Deposit all available cash into this strategy
+// - assets = N: Leave exactly N assets in this strategy
+// - assets = type(uint256).max: Deposit the remaining assets withdrawn by this reallocation
 //
 // Order matters: withdrawals should come before deposits
 
 MarketAllocation[] memory allocations = new MarketAllocation[](2);
 allocations[0] = MarketAllocation({
     id: IERC4626(fromStrategy),
-    assets: 0  // Target: leave 0 assets (withdraws everything)
+    assets: currentAllocation - toWithdraw  // Target after the bounded withdrawal
 });
 allocations[1] = MarketAllocation({
     id: IERC4626(toStrategy),
-    assets: type(uint256).max  // Target: deposit all available cash
+    assets: type(uint256).max  // Target: deposit the assets withdrawn above
 });
 
 earn.reallocate(allocations);
 ```
 
-**Correct: updating supply queue priority**
+**Correct (updating supply queue priority):**
 
 ```typescript
 // Supply queue determines deposit order
@@ -280,7 +318,7 @@ await earn.write.setSupplyQueue([newSupplyQueue]);
 // Now deposits flow: vaultB (until cap) -> vaultA -> vaultC
 ```
 
-**Correct: updating withdraw queue for liquidity**
+**Correct (updating withdraw queue for liquidity):**
 
 ```solidity
 // Withdraw queue determines withdrawal order
@@ -289,7 +327,7 @@ await earn.write.setSupplyQueue([newSupplyQueue]);
 // Get current allocations
 uint256[] memory allocations = new uint256[](strategies.length);
 for (uint256 i = 0; i < strategies.length; i++) {
-    allocations[i] = IERC4626(strategies[i]).balanceOf(address(earn));
+    allocations[i] = earn.expectedSupplyAssets(IERC4626(strategies[i]));
 }
 
 // updateWithdrawQueue takes uint256[] indexes, NOT addresses
@@ -299,7 +337,7 @@ uint256[] memory newOrder = sortByLiquidityIndexes(strategies);
 earn.updateWithdrawQueue(newOrder);
 ```
 
-**Correct: reducing strategy cap safely**
+**Correct (reducing strategy cap safely):**
 
 ```solidity
 // To reduce exposure to a strategy:
@@ -322,12 +360,12 @@ if (currentAllocation > newLowerCap) {
         id: IERC4626(safeStrategy),
         assets: type(uint256).max  // Target: deposit all freed assets
     });
-    
+
     earn.reallocate(allocations);
 }
 ```
 
-**Correct: emergency strategy removal**
+**Correct (emergency strategy removal):**
 
 ```solidity
 // If a strategy is reverting/compromised:
@@ -349,85 +387,45 @@ uint256[] memory newIndexes = getQueueWithoutBrokenStrategy();
 earn.updateWithdrawQueue(newIndexes);
 ```
 
-**Correct: monitoring and rebalancing**
+**Correct (asset-denominated reallocation targets):**
 
+Read each allocation with `earn.read.expectedSupplyAssets([strategy])`. This converts EulerEarn's tracked strategy shares to underlying assets; raw `balanceOf` values are shares and can include untracked donations. Read source `maxWithdraw(earnAddress)`, destination `maxDeposit(earnAddress)`, and destination `config().cap` at a consistent block.
+
+<!-- checked-example: earn-targets -->
 ```typescript
-interface StrategyMetrics {
-  address: Address;
-  allocation: bigint;
-  apy: number;
-  utilization: number;
-  liquidity: bigint;
-}
-
-async function getStrategyMetrics(
-  earn: Address,
-  strategy: Address
-): Promise<StrategyMetrics> {
-  const allocation = await IERC4626(strategy).balanceOf(earn);
-  const vaultInfo = await vaultLens.getVaultInfoDynamic(strategy);
-  
-  return {
-    address: strategy,
-    allocation,
-    apy: vaultInfo.irmInfo.interestRateInfo[0].supplyAPY / 1e25,
-    utilization: vaultInfo.totalBorrowed / vaultInfo.totalAssets,
-    liquidity: vaultInfo.totalCash,
-  };
-}
-
-async function optimizeAllocation(earn: Address) {
-  const strategies = await earn.withdrawQueue();
-  const metrics = await Promise.all(
-    strategies.map(s => getStrategyMetrics(earn, s))
-  );
-  
-  // Sort by APY descending
-  const byApy = [...metrics].sort((a, b) => b.apy - a.apy);
-  
-  // Reallocate to higher-yield strategies (respecting caps and liquidity)
-  for (const highYield of byApy.slice(0, 3)) {
-    // config() returns { balance, cap, enabled, removableAt }
-    const strategyConfig = await earn.read.config([highYield.address]);
-    const headroom = strategyConfig.cap - highYield.allocation;
-    
-    if (headroom > MIN_REALLOCATION) {
-      // Find lower-yield strategy to pull from
-      const lowYield = byApy[byApy.length - 1];
-      const moveAmount = min(headroom, lowYield.liquidity);
-      
-      if (moveAmount > MIN_REALLOCATION) {
-        // Reallocate: reduce low yield, increase high yield
-        // type(uint256).max in TypeScript = 2n ** 256n - 1n
-        const MAX_UINT256 = 2n ** 256n - 1n;
-        const allocations = [
-          { id: lowYield.address, assets: lowYield.allocation - moveAmount },
-          { id: highYield.address, assets: MAX_UINT256 },
-        ];
-        await earn.write.reallocate([allocations]);
-      }
-    }
-  }
+export function reallocationTargets(
+  desired: bigint,
+  sourceAssets: bigint,
+  sourceMaxWithdraw: bigint,
+  targetAssets: bigint,
+  targetCap: bigint,
+  targetMaxDeposit: bigint,
+) {
+  const inputs = [desired, sourceAssets, sourceMaxWithdraw, targetAssets, targetCap, targetMaxDeposit];
+  if (inputs.some(value => value < 0n)) throw new Error('Negative asset amount');
+  const headroom = targetCap > targetAssets ? targetCap - targetAssets : 0n;
+  const amount = [desired, sourceAssets, sourceMaxWithdraw, headroom, targetMaxDeposit]
+    .reduce((a, b) => a < b ? a : b);
+  return { amount, sourceTarget: sourceAssets - amount, targetTarget: targetAssets + amount };
 }
 ```
 
+Skip zero movements and identical source/destination strategies. Encode `[{ id: source, assets: sourceTarget }, { id: destination, assets: targetTarget }]`, then simulate immediately before submitting. Withdrawals must precede deposits; interest, rounding, liquidity, and cap changes can invalidate a previously calculated target. For a single-source move, `type(uint256).max` on the destination deposits the actual amount withdrawn; ensure its cap and liquidity constraints can accept it. APY values use 1e27 scaling (`formatUnits(supplyAPY, 25)` gives percent), and utilization needs a zero-total-assets guard before division.
+
 Key considerations:
-
 - Only allocators/curators/owner can reallocate
-
 - Respect strategy liquidity when withdrawing
-
 - Cap increases are timelocked; decreases are instant
-
 - Monitor strategy APYs and adjust allocations
-
 - Keep some allocation in liquid/idle vault for withdrawals
 
 ---
 
+#### PublicAllocator: Permissionless Reallocation
+
 PublicAllocator enables anyone to trigger reallocations on EulerEarn vaults within admin-configured flow caps. This allows third parties (bots, keepers, MEV searchers) to optimize allocations without requiring allocator permissions.
 
-**Correct: admin configuring PublicAllocator**
+**Correct (admin configuring PublicAllocator):**
 
 ```solidity
 import {IPublicAllocator, FlowCapsConfig, FlowCaps} from "euler-earn/interfaces/IPublicAllocator.sol";
@@ -465,7 +463,7 @@ configs[1] = FlowCapsConfig({
 publicAllocator.setFlowCaps(earnVault, configs);
 ```
 
-**Correct: public reallocation by anyone**
+**Correct (public reallocation by anyone):**
 
 ```solidity
 import {IPublicAllocator, Withdrawal} from "euler-earn/interfaces/IPublicAllocator.sol";
@@ -503,7 +501,7 @@ publicAllocator.reallocateTo{value: fee}(
 // - Supply strategy: maxIn decreases, maxOut increases
 ```
 
-**Correct: TypeScript public reallocation**
+**Correct (TypeScript public reallocation):**
 
 ```typescript
 import { encodeFunctionData, parseEther } from 'viem';
@@ -531,7 +529,7 @@ await publicAllocator.write.reallocateTo(
 );
 ```
 
-**Correct: claiming accrued fees as admin**
+**Correct (claiming accrued fees as admin):**
 
 ```solidity
 // Check accrued fees
@@ -544,19 +542,12 @@ publicAllocator.transferFee(earnVault, payable(feeRecipient));
 **PublicAllocator Key Points:**
 
 | Aspect | Details |
-
 |--------|---------|
-
 | Who can configure | Vault owner or designated admin |
-
 | Who can reallocate | Anyone (permissionless) |
-
 | Fee | Paid in ETH by caller, set per vault |
-
 | Flow caps | Per-strategy limits on in/out flows |
-
 | Sorting | Withdrawals must be sorted by address (ascending) |
-
 | Restrictions | Cannot include supplyId in withdrawals; strategies must be enabled |
 
 **Common Errors:**
@@ -572,13 +563,11 @@ publicAllocator.transferFee(earnVault, payable(feeRecipient));
 // NotEnoughSupply: Strategy doesn't have enough assets
 ```
 
-See also: [Lens Contracts](tools-lens) - EulerEarnVaultLens provides `getVaultInfoFull()` to query all strategies and their allocations.
+See also: [Lens Contracts](https://github.com/euler-xyz/agent-skills/blob/main/skills/euler-data/rules/tools-lens.md) - EulerEarnVaultLens provides `getVaultInfoFull()` to query all strategies and their allocations.
 
-Reference: [https://github.com/euler-xyz/euler-earn#roles](https://github.com/euler-xyz/euler-earn#roles), [https://github.com/euler-xyz/euler-earn/blob/master/src/PublicAllocator.sol](https://github.com/euler-xyz/euler-earn/blob/master/src/PublicAllocator.sol)
-
----
+Reference: [EulerEarn Roles](https://github.com/euler-xyz/euler-earn#roles), [PublicAllocator.sol](https://github.com/euler-xyz/euler-earn/blob/master/src/PublicAllocator.sol)
 
 ## References
 
-1. [https://docs.euler.finance](https://docs.euler.finance)
-2. [https://github.com/euler-xyz/euler-earn](https://github.com/euler-xyz/euler-earn)
+- [https://docs.euler.finance](https://docs.euler.finance)
+- [https://github.com/euler-xyz/euler-earn](https://github.com/euler-xyz/euler-earn)

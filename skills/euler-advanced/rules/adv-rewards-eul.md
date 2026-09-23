@@ -42,14 +42,14 @@ uint256 status = reward.whitelistStatus(account);
 
 ```solidity
 // Get all lock entries for an account
-(uint256[] memory lockTimestamps, uint256[] memory amounts) = 
+(uint256[] memory lockTimestamps, uint256[] memory amounts) =
     reward.getLockedAmounts(account);
 
 // For each lock, check withdrawable amounts
 for (uint i = 0; i < lockTimestamps.length; i++) {
-    (uint256 accountAmount, uint256 remainderAmount) = 
+    (uint256 accountAmount, uint256 remainderAmount) =
         reward.getWithdrawAmountsByLockTimestamp(account, lockTimestamps[i]);
-    
+
     // accountAmount: what account can withdraw now
     // remainderAmount: what goes to remainder receiver (DAO)
 }

@@ -36,32 +36,27 @@ uint256 ethInUsd = IPriceOracle(oracle).getQuote(
 
 // Get value of 0.5 BTC in ETH
 uint256 btcInEth = IPriceOracle(oracle).getQuote(
-    0.5e8,     // inAmount: 0.5 BTC (8 decimals)  
+    0.5e8,     // inAmount: 0.5 BTC (8 decimals)
     wbtc,      // base: BTC
     weth       // quote: ETH
 );
 // Returns: 15e18 (if 0.5 BTC = 15 ETH)
 ```
 
-**Correct (using OracleLens for comprehensive data):**
+**Correct (reading an amount quote in TypeScript):**
 
 ```typescript
-import { OracleLens } from '@eulerxyz/evk-periphery';
+import { parseAbi } from 'viem';
 
-// OracleLens provides rich oracle information
-const oracleInfo = await oracleLens.getOracleInfo(
-  oracleAddress,
-  [weth, wbtc, link],  // base tokens
-  [usd, usd, usd]       // quote tokens
-);
-
-// Access individual prices
-oracleInfo.prices.forEach((priceInfo, i) => {
-  console.log(`${bases[i]}: ${priceInfo.quote} ${quotes[i]}`);
-  console.log(`  Oracle: ${priceInfo.oracle}`);
-  console.log(`  Success: ${priceInfo.success}`);
+const quoteAmount = await publicClient.readContract({
+  address: oracleAddress,
+  abi: parseAbi(['function getQuote(uint256 inAmount, address base, address quote) view returns (uint256 outAmount)']),
+  functionName: 'getQuote',
+  args: [baseAmount, baseAddress, quoteAddress],
 });
 ```
+
+OracleLens `getOracleInfo(oracle, bases, quotes)` returns adapter metadata and resolution information, not a `prices` array. Use `getQuote`/`getQuotes` for amounts and handle stale or unavailable feed errors explicitly. Pull-based feeds need updates before the quote can succeed.
 
 **Correct (bid/ask pricing for spreads):**
 
@@ -89,4 +84,4 @@ Key points:
 - Decimals are handled internally by adapters
 - **Pyth oracles require price updates before any operation that uses them**
 
-Reference: [IPriceOracle Interface](https://github.com/euler-xyz/euler-price-oracle#iprice oracle)
+Reference: [IPriceOracle Interface](https://github.com/euler-xyz/euler-price-oracle#ipriceoracle)

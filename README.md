@@ -38,31 +38,37 @@ Developer tools and data access guide. Covers Lens contracts, subgraphs, contrac
 
 **Use when:** Querying vault data, fetching historical data, looking up addresses/ABIs, using Euler Creator.
 
+### euler-sdk
+
+Integration guide for `@eulerxyz/euler-v2-sdk@3.4.0`. Covers service reads, prepared/materialized execution, simulation, CoW swaps, migrations, plugins, fallback adapters, and query caching.
+
+**Use when:** Building applications, scripts, or bots with the TypeScript SDK. Skill versions are independent of the SDK package version.
+
 ## Installation
 
 Install all skills:
 
 ```bash
-npx add-skill euler-xyz/agent-skills --skill euler-vaults --skill euler-irm-oracles --skill euler-earn --skill euler-advanced --skill euler-data
+npx skills add euler-xyz/agent-skills --skill euler-vaults --skill euler-irm-oracles --skill euler-earn --skill euler-advanced --skill euler-data --skill euler-sdk
 ```
 
 Install specific skill(s):
 
 ```bash
-npx add-skill euler-xyz/agent-skills --skill euler-vaults
-npx add-skill euler-xyz/agent-skills --skill euler-vaults --skill euler-irm-oracles
+npx skills add euler-xyz/agent-skills --skill euler-vaults
+npx skills add euler-xyz/agent-skills --skill euler-vaults --skill euler-irm-oracles
 ```
 
 Interactive selection (prompts you to choose):
 
 ```bash
-npx add-skill euler-xyz/agent-skills
+npx skills add euler-xyz/agent-skills
 ```
 
 List available skills:
 
 ```bash
-npx add-skill euler-xyz/agent-skills --list
+npx skills add euler-xyz/agent-skills --list
 ```
 
 **Skill guide:**
@@ -70,7 +76,8 @@ npx add-skill euler-xyz/agent-skills --list
 - `euler-irm-oracles` - Oracle adapters and Interest Rate Models
 - `euler-earn` - Yield aggregation vaults
 - `euler-advanced` - Hooks, flash loans, fee flow, rewards
-- `euler-data` - Lens contracts, subgraphs, developer tools
+- `euler-data` - SDK/Data V3 routing, Lens contracts, subgraphs, developer tools
+- `euler-sdk` - TypeScript SDK integration
 
 Or clone the repository directly:
 
@@ -118,8 +125,8 @@ Each skill contains:
 Each rule file in `rules/` contains:
 
 - Brief explanation of why the rule matters
-- **Incorrect** code example showing common mistakes
-- **Correct** code example with best practices
+- Labeled examples where code clarifies the rule; procedural rules may be prose-only
+- Deliberately incorrect examples clearly marked as such
 - Additional context and references
 
 ## Building
@@ -128,9 +135,12 @@ The repository includes build tooling for compiling skills:
 
 ```bash
 cd packages/euler-build
-pnpm install
-pnpm build        # Compile AGENTS.md and extract test cases for all skills
-pnpm validate     # Validate rule file structure for all skills
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm validate         # Validate every skill's rules and metadata
+pnpm typecheck        # Check the build tooling
+pnpm test             # Run parser and representative documentation regressions
+pnpm build            # Regenerate all six AGENTS.md files and evaluation cases
+pnpm check-generated  # Fail on stale generated files without writing
 ```
 
 Build a specific skill:
@@ -138,6 +148,23 @@ Build a specific skill:
 ```bash
 pnpm build-agents -- --skill=euler-vaults
 ```
+
+### Maintenance and verification
+
+Euler Labs maintains these guides. [sources.json](sources.json) records the SDK version and contract revisions used for the current refresh. Use the maintained deployment/ABI services or canonical interfaces repository for chain addresses; this repository does not bundle an address snapshot.
+
+When updating a skill:
+
+1. Compare its guidance against the published SDK types and the relevant contract revision; update the provenance record.
+2. Edit `rules/`, `SKILL.md`, and `metadata.json`, keeping the two skill-version fields equal.
+3. Update the marked executable examples and regression tests for changed APIs or transaction behavior.
+4. Run the checks above, review the generated guides, and commit generated output with its sources.
+
+CI runs on every PR and main-branch push. `test-cases.json` is an LLM evaluation catalog, not the executable test suite. The tests compile marked TypeScript examples against the pinned SDK and exercise parser preservation, bigint caching, transaction encoding, receipt parsing, and Earn allocation bounds. Educational fragments and deliberately incorrect snippets are not all compiled; these checks do not establish live-chain or fork execution success.
+
+With Foundry installed, `pnpm test:solidity` extracts the operator example, downloads the three interfaces pinned in `sources.json`, and checks owner authorization and recipient/account encoding in a local mock harness. This optional check requires network access and is separate from the Node-only CI suite.
+
+Build tooling requires Node.js 22 or newer and pnpm 10.33.2. To extract a single skill, use `pnpm extract-tests -- --skill=euler-sdk`; this writes a separate ignored catalog without replacing the combined one.
 
 ## References
 

@@ -1,30 +1,22 @@
 # Euler Advanced Features Agent Skill
 
-**Version 1.0.0**  
-Euler Labs  
-January 2026
+**Version 1.1.0**
 
-> **Note:**  
-> This document is for agents and LLMs to follow when implementing  
-> advanced Euler features. It covers hooks, flash loans, fee flow, and rewards.
+Euler Labs
 
----
+September 2026
 
-## Abstract
+> Generated from SKILL.md, metadata.json, and rules/. Edit those sources and run pnpm build.
 
 Advanced features guide for Euler Finance V2 protocol. Covers vault hooks for custom logic, flash loans and debt transfer, fee flow controller mechanics, and EUL reward token distribution. For power users building sophisticated integrations.
 
----
-
 ## Table of Contents
 
-1. [Advanced Features](#1-advanced-features) — **MEDIUM**
-   - 1.1 [EUL Reward Token Distribution](#11-eul-reward-token-distribution)
-   - 1.2 [Fee Flow Controller Mechanics](#12-fee-flow-controller-mechanics)
-   - 1.3 [Flash Loans and Debt Transfer](#13-flash-loans-and-debt-transfer)
-   - 1.4 [Vault Hooks and Use Cases](#14-vault-hooks-and-use-cases)
-
----
+- [Advanced Features](#1-advanced-features)
+  - [Fee Flow Controller Mechanics](#adv-fee-flow-fee-flow-controller-mechanics)
+  - [Flash Loans and Debt Transfer](#adv-flashloan-pulldebt-flash-loans-and-debt-transfer)
+  - [Vault Hooks and Use Cases](#adv-hooks-vault-hooks-and-use-cases)
+  - [EUL Reward Token Distribution](#adv-rewards-eul-eul-reward-token-distribution)
 
 ## 1. Advanced Features
 
@@ -32,98 +24,13 @@ Advanced features guide for Euler Finance V2 protocol. Covers vault hooks for cu
 
 Advanced protocol features for power users and integrators. Covers vault hooks for custom logic, flash loans with pull-debt patterns, fee flow and revenue distribution, and EUL token rewards/staking. These features enable sophisticated DeFi strategies and protocol integrations.
 
-### 1.1 EUL Reward Token Distribution
-
-**Impact: MEDIUM (Understanding locked reward mechanics and vesting)**
-
-RewardToken implements locked EUL distribution with a specific vesting schedule: 20% immediate unlock, 80% linear unlock over 6 months.
-
-**Incorrect: expecting immediate full access to rewards**
-
-```solidity
-// WRONG: Reward tokens are locked and vest over time
-IERC20(rewardToken).transfer(recipient, amount); // May revert or lose tokens!
-```
-
-**Correct: understanding locked reward mechanics**
-
-```solidity
-import {RewardToken} from "evk-periphery/ERC20/deployed/RewardToken.sol";
-
-RewardToken reward = RewardToken(rewardTokenAddress);
-
-// RewardToken wraps EUL with locking schedule
-address underlying = address(reward.underlying()); // EUL token
-
-// Unlock schedule (per the contract):
-// - 20% unlocked immediately
-// - Remaining 80% unlocks linearly over 180 days
-// - Full unlock at 180 days from lock timestamp
-
-// Check whitelist status
-// WHITELIST_STATUS_NONE = 0: subject to lock schedule
-// WHITELIST_STATUS_ADMIN = 1: can deposit/withdraw freely
-// WHITELIST_STATUS_DISTRIBUTOR = 2: can transfer but not withdraw
-uint256 status = reward.whitelistStatus(account);
-```
-
-**Correct: checking unlock amounts**
-
-```solidity
-// Get all lock entries for an account
-(uint256[] memory lockTimestamps, uint256[] memory amounts) = 
-    reward.getLockedAmounts(account);
-
-// For each lock, check withdrawable amounts
-for (uint i = 0; i < lockTimestamps.length; i++) {
-    (uint256 accountAmount, uint256 remainderAmount) = 
-        reward.getWithdrawAmountsByLockTimestamp(account, lockTimestamps[i]);
-    
-    // accountAmount: what account can withdraw now
-    // remainderAmount: what goes to remainder receiver (DAO)
-}
-```
-
-**Correct: withdrawing vested tokens**
-
-```solidity
-// Withdraw by specific lock timestamp
-bool allowRemainderLoss = true; // Accept that unvested portion goes to DAO
-
-reward.withdrawToByLockTimestamp(
-    recipient,           // Where to send unlocked tokens
-    lockTimestamp,       // Which lock to withdraw from
-    allowRemainderLoss   // Must be true if any unvested
-);
-
-// Or withdraw from multiple locks at once
-uint256[] memory timestamps = reward.getLockedAmountsLockTimestamps(account);
-reward.withdrawToByLockTimestamps(
-    recipient,
-    timestamps,
-    allowRemainderLoss
-);
-```
-
-**Key Points:**
-
-1. **Transfers restricted**: Non-whitelisted accounts cannot transfer to each other
-
-2. **Remainder receiver**: Unvested tokens are burned when claimed early
-
-3. **Lock normalization**: Locks are grouped by day for gas efficiency
-
-4. **Whitelist roles**: ADMIN can freely move tokens, DISTRIBUTOR can distribute but not withdraw
-
-Reference: [https://github.com/euler-xyz/evk-periphery/blob/master/src/ERC20/deployed/RewardToken.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/ERC20/deployed/RewardToken.sol)
-
-### 1.2 Fee Flow Controller Mechanics
+### adv-fee-flow Fee Flow Controller Mechanics
 
 **Impact: MEDIUM (Understanding protocol revenue and fee distribution)**
 
 FeeFlowController implements continuous Dutch auctions to sell accumulated protocol fees. It sells any assets it holds (typically vault shares from interest fees) in exchange for payment tokens sent to the DAO.
 
-**Incorrect: expecting direct fee claiming**
+**Incorrect (expecting direct fee claiming):**
 
 ```solidity
 // WRONG: Fees are not claimed directly from vaults
@@ -131,7 +38,7 @@ IEVault vault = IEVault(vaultAddress);
 vault.claimFees(); // This doesn't exist!
 ```
 
-**Correct: understanding fee flow architecture**
+**Correct (understanding fee flow architecture):**
 
 ```solidity
 import {IEVault} from "evk/EVault/IEVault.sol";
@@ -154,7 +61,7 @@ address feeReceiver = vault.feeReceiver();
 vault.convertFees();
 ```
 
-**Correct: interacting with FeeFlowController**
+**Correct (interacting with FeeFlowController):**
 
 ```solidity
 import {FeeFlowController} from "fee-flow/FeeFlowController.sol";
@@ -177,7 +84,7 @@ address paymentToken = address(feeFlow.paymentToken());
 address paymentReceiver = feeFlow.paymentReceiver();
 ```
 
-**Correct: buying from the auction**
+**Correct (buying from the auction):**
 
 ```solidity
 import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
@@ -215,24 +122,20 @@ feeFlow.buy(
 **Key FeeFlow Concepts:**
 
 1. **Dutch Auction**: Price decreases linearly over epoch period (price = initPrice - initPrice * timePassed / epochPeriod)
-
 2. **Epoch Reset**: After each buy, new auction starts with adjusted initial price
-
 3. **Price Adaptation**: New initPrice = settlementPrice * priceMultiplier (clamped to min/max)
-
 4. **Price at Epoch End**: If no one buys, price reaches 0 (assets are free)
-
 5. **Manual Fee Conversion**: `convertFees()` must be called on vaults separately before buying
 
-Reference: [https://github.com/euler-xyz/fee-flow/blob/master/src/FeeFlowController.sol](https://github.com/euler-xyz/fee-flow/blob/master/src/FeeFlowController.sol)
+Reference: [FeeFlowController.sol](https://github.com/euler-xyz/fee-flow/blob/master/src/FeeFlowController.sol)
 
-### 1.3 Flash Loans and Debt Transfer
+### adv-flashloan-pulldebt Flash Loans and Debt Transfer
 
 **Impact: HIGH (Advanced borrowing operations for arbitrage and debt management)**
 
 Euler vaults support flash loans (borrow and repay in same transaction) and debt transfer (pullDebt to take on another account's debt).
 
-**Incorrect: not repaying flash loan in same transaction**
+**Incorrect (not repaying flash loan in same transaction):**
 
 ```solidity
 // WRONG: Flash loan MUST be repaid in same transaction
@@ -241,7 +144,7 @@ contract BadFlashBorrower {
         IEVault(vault).flashLoan(amount, "");
         // Missing repayment! This will revert with E_FlashLoanNotRepaid
     }
-    
+
     function onFlashLoan(bytes memory) external {
         // Trying to keep the funds - WILL FAIL
         // Vault checks balance after callback returns
@@ -249,7 +152,33 @@ contract BadFlashBorrower {
 }
 ```
 
-**Correct: flash loan with proper repayment**
+**Correct (flash loan with proper repayment):**
+
+```solidity
+import {IFlashLoan} from "evk/interfaces/IFlashLoan.sol";
+
+// Flash loans on Euler are FREE (no fee)
+// Must implement IFlashLoan interface and repay in same tx
+
+contract MyFlashBorrower is IFlashLoan {
+    function executeFlashLoan(address vault, uint256 amount) external {
+        // Request flash loan - vault transfers assets to this contract
+        IEVault(vault).flashLoan(amount, abi.encode(/* your data */));
+    }
+
+    // Vault calls this after transferring assets
+    function onFlashLoan(bytes memory data) external override {
+        // Decode your data
+        // ... do arbitrage, liquidation, etc ...
+
+        // MUST return assets to vault before function ends
+        // Vault checks: balanceOf(vault) >= originalBalance
+        IERC20(asset).transfer(msg.sender, amount);
+    }
+}
+```
+
+**TypeScript: Flash loan via EVC batch:**
 
 ```typescript
 // Flash loans can also be done via EVC batch with borrow/repay
@@ -291,9 +220,31 @@ const batchItems: BatchItem[] = [
 await evc.batch(batchItems);
 ```
 
-**TypeScript: Flash loan via EVC batch:**
+**Pull Debt (take on another account's debt):**
 
-**Pull Debt: take on another account's debt**
+```solidity
+// pullDebt transfers debt FROM another account TO you
+// Useful for debt consolidation, account migration, or helping friends
+
+// Requirements:
+// 1. You must be authenticated (or operator for the account)
+// 2. You must have the vault as controller
+// 3. You must have sufficient collateral
+// 4. Cannot pull from yourself (use repay instead)
+
+// Pull all debt from another account
+uint256 theirDebt = IEVault(vault).debtOf(fromAccount);
+
+IEVault(vault).pullDebt(
+    type(uint256).max,  // or specific amount
+    fromAccount         // whose debt to take
+);
+
+// After: your debt increased, their debt decreased
+// The debt + interest is transferred, not principal
+```
+
+**Use Case: Account Migration:**
 
 ```typescript
 // Move debt from old sub-account to new one
@@ -352,17 +303,15 @@ await evc.batch(batchItems);
 // Old account now has 0 debt, can withdraw collateral
 ```
 
-**Use Case: Account Migration:**
+Reference: [EVault Borrowing Module](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Borrowing.sol)
 
-Reference: [https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Borrowing.sol](https://github.com/euler-xyz/euler-vault-kit/blob/master/src/EVault/modules/Borrowing.sol)
-
-### 1.4 Vault Hooks and Use Cases
+### adv-hooks Vault Hooks and Use Cases
 
 **Impact: MEDIUM (Enabling custom vault logic and access control)**
 
 Euler vaults support a hooking system that allows custom logic to be executed before operations. Hooks can implement access control, pausing, or reject operations that violate custom invariants.
 
-**Incorrect: ignoring hook configuration on new vaults**
+**Incorrect (ignoring hook configuration on new vaults):**
 
 ```solidity
 // WRONG: New vaults start with all operations disabled!
@@ -371,7 +320,7 @@ IEVault vault = IEVault(newVaultAddress);
 vault.deposit(amount, receiver); // Reverts with E_OperationDisabled!
 ```
 
-**Correct: understanding hook architecture**
+**Correct (understanding hook architecture):**
 
 ```solidity
 import {IEVault} from "evk/EVault/IEVault.sol";
@@ -405,7 +354,7 @@ uint32 OP_VAULT_STATUS_CHECK = 1 << 14;  // checkVaultStatus
 vault.setHookConfig(address(0), 0);
 ```
 
-**Correct: implementing Access Control**
+**Correct (implementing Access Control):**
 
 ```solidity
 import {HookTargetAccessControl} from "evk-periphery/HookTarget/HookTargetAccessControl.sol";
@@ -425,16 +374,16 @@ vault.setHookConfig(address(accessControl), OP_DEPOSIT | OP_BORROW);
 // Now only addresses with WILD_CARD role can deposit/borrow
 ```
 
-**Correct: custom hook implementation**
+**Correct (custom hook implementation):**
 
 ```solidity
 import {BaseHookTarget} from "evk-periphery/HookTarget/BaseHookTarget.sol";
 
 contract CustomHook is BaseHookTarget {
     mapping(address => bool) public allowed;
-    
+
     constructor(address factory) BaseHookTarget(factory) {}
-    
+
     // Hook receives same calldata as vault function
     // with the authenticated caller appended
     function deposit(uint256 assets, address receiver) external view {
@@ -442,18 +391,45 @@ contract CustomHook is BaseHookTarget {
         require(allowed[caller], "Not allowed");
         // If this doesn't revert, the deposit proceeds
     }
-    
+
     function borrow(uint256 assets, address receiver) external view {
         address caller = _msgSender();
         require(allowed[caller], "Not allowed");
     }
-    
+
     // Fallback for other operations - allow them
     fallback() external {}
 }
 ```
 
-**Correct: checking vault status with hooks**
+**Correct (checking vault status with hooks):**
+
+```solidity
+// OP_VAULT_STATUS_CHECK hooks into the EVC status check
+// This runs at the end of batches to verify post-conditions
+
+contract InvariantChecker is BaseHookTarget {
+    constructor(address factory) BaseHookTarget(factory) {}
+
+    // Called when EVC checks vault status
+    function checkVaultStatus() external view {
+        IEVault vault = IEVault(msg.sender);
+
+        // Example: ensure utilization stays below 95%
+        uint256 totalAssets = vault.totalAssets();
+        uint256 totalBorrows = vault.totalBorrows();
+
+        if (totalAssets > 0) {
+            uint256 utilization = (totalBorrows * 1e18) / totalAssets;
+            require(utilization < 0.95e18, "Utilization too high");
+        }
+    }
+
+    fallback() external {}
+}
+```
+
+**TypeScript: Checking hook configuration:**
 
 ```typescript
 import { getContract } from 'viem';
@@ -492,28 +468,101 @@ console.log('Hooked Operations:', operations);
 const isDepositDisabled = operations.DEPOSIT && hookTarget === '0x0000000000000000000000000000000000000000';
 ```
 
-**TypeScript: Checking hook configuration:**
-
 **Use Cases:**
 
 | Hook Type | Purpose | Example |
-
 |-----------|---------|---------|
-
 | Access Control | Permissioned vaults | KYC/AML compliance |
-
 | Rate Limiter | Prevent large movements | Limit deposit/withdraw per block |
-
 | Invariant Checker | Post-condition validation | Ensure utilization bounds |
-
 | Whitelist | Restrict interactions | Institutional-only vaults |
 
 [EVK Whitepaper - Hooks](https://github.com/euler-xyz/euler-vault-kit/blob/master/docs/whitepaper.md)
 
----
+### adv-rewards-eul EUL Reward Token Distribution
+
+**Impact: MEDIUM (Understanding locked reward mechanics and vesting)**
+
+RewardToken implements locked EUL distribution with a specific vesting schedule: 20% immediate unlock, 80% linear unlock over 6 months.
+
+**Incorrect (expecting immediate full access to rewards):**
+
+```solidity
+// WRONG: Reward tokens are locked and vest over time
+IERC20(rewardToken).transfer(recipient, amount); // May revert or lose tokens!
+```
+
+**Correct (understanding locked reward mechanics):**
+
+```solidity
+import {RewardToken} from "evk-periphery/ERC20/deployed/RewardToken.sol";
+
+RewardToken reward = RewardToken(rewardTokenAddress);
+
+// RewardToken wraps EUL with locking schedule
+address underlying = address(reward.underlying()); // EUL token
+
+// Unlock schedule (per the contract):
+// - 20% unlocked immediately
+// - Remaining 80% unlocks linearly over 180 days
+// - Full unlock at 180 days from lock timestamp
+
+// Check whitelist status
+// WHITELIST_STATUS_NONE = 0: subject to lock schedule
+// WHITELIST_STATUS_ADMIN = 1: can deposit/withdraw freely
+// WHITELIST_STATUS_DISTRIBUTOR = 2: can transfer but not withdraw
+uint256 status = reward.whitelistStatus(account);
+```
+
+**Correct (checking unlock amounts):**
+
+```solidity
+// Get all lock entries for an account
+(uint256[] memory lockTimestamps, uint256[] memory amounts) =
+    reward.getLockedAmounts(account);
+
+// For each lock, check withdrawable amounts
+for (uint i = 0; i < lockTimestamps.length; i++) {
+    (uint256 accountAmount, uint256 remainderAmount) =
+        reward.getWithdrawAmountsByLockTimestamp(account, lockTimestamps[i]);
+
+    // accountAmount: what account can withdraw now
+    // remainderAmount: what goes to remainder receiver (DAO)
+}
+```
+
+**Correct (withdrawing vested tokens):**
+
+```solidity
+// Withdraw by specific lock timestamp
+bool allowRemainderLoss = true; // Accept that unvested portion goes to DAO
+
+reward.withdrawToByLockTimestamp(
+    recipient,           // Where to send unlocked tokens
+    lockTimestamp,       // Which lock to withdraw from
+    allowRemainderLoss   // Must be true if any unvested
+);
+
+// Or withdraw from multiple locks at once
+uint256[] memory timestamps = reward.getLockedAmountsLockTimestamps(account);
+reward.withdrawToByLockTimestamps(
+    recipient,
+    timestamps,
+    allowRemainderLoss
+);
+```
+
+**Key Points:**
+
+1. **Transfers restricted**: Non-whitelisted accounts cannot transfer to each other
+2. **Remainder receiver**: Unvested tokens are burned when claimed early
+3. **Lock normalization**: Locks are grouped by day for gas efficiency
+4. **Whitelist roles**: ADMIN can freely move tokens, DISTRIBUTOR can distribute but not withdraw
+
+Reference: [RewardToken.sol](https://github.com/euler-xyz/evk-periphery/blob/master/src/ERC20/deployed/RewardToken.sol)
 
 ## References
 
-1. [https://docs.euler.finance](https://docs.euler.finance)
-2. [https://github.com/euler-xyz/euler-vault-kit](https://github.com/euler-xyz/euler-vault-kit)
-3. [https://github.com/euler-xyz/evk-periphery](https://github.com/euler-xyz/evk-periphery)
+- [https://docs.euler.finance](https://docs.euler.finance)
+- [https://github.com/euler-xyz/euler-vault-kit](https://github.com/euler-xyz/euler-vault-kit)
+- [https://github.com/euler-xyz/evk-periphery](https://github.com/euler-xyz/evk-periphery)

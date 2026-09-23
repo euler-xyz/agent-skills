@@ -1,54 +1,59 @@
 ---
-title: Transaction Planning, Approvals, and EVC Batch Execution
+title: Transaction Planning and Execution
+section: 2
 impact: CRITICAL
-impactDescription: Prevents reverted transactions and broken wallet UX
-tags: execution, planX, approvals, permit2, evc
+impactDescription: Keep approvals, plugins, simulation and dispatched requests consistent
+tags: execution, planX, approvals, permit2, evc, materialization
 ---
 
-## Transaction Planning, Approvals, and EVC Batch Execution
+## Transaction Planning and Execution
 
-Prefer `planX` over `encodeX` for app flows. `planX` includes required approvals and context-driven execution decisions.
-For reward claims, use `rewardsService.buildClaimPlan(s)` instead of adding provider-specific claim logic to `executionService`.
+Use `executionService.planX` for user intents. Planners carry approval requirements and account context. Raw `encodeX` helpers only encode calls. Fetch the account entity before planning; an owner address alone is not a planner account.
 
-**Incorrect (encoding raw calls but skipping approvals):**
+**Correct (prepare, simulate, execute a scripted deposit):**
 
+<!-- checked-example: sdk-execution -->
 ```typescript
-const batchItems = sdk.executionService.encodeDeposit({ ...args });
-// WRONG: no approval resolution; tx may revert on allowance
+import type {
+  EulerSDK,
+  PlanDepositArgs,
+  ExecutePreparedTransactionPlanArgs,
+} from "@eulerxyz/euler-v2-sdk";
+
+export async function deposit(
+  sdk: EulerSDK,
+  chainId: number,
+  args: PlanDepositArgs,
+  wallet: Pick<ExecutePreparedTransactionPlanArgs, "sendTransaction" | "signTypedData">,
+) {
+  const plan = sdk.executionService.planDeposit(args);
+  const prepared = await sdk.executionService.prepareTransactionPlan({
+    plan, chainId, account: args.account,
+    usePermit2: true,
+    unlimitedApproval: false,
+  });
+  const simulation = await sdk.executionService.simulatePreparedTransactionPlan(prepared);
+  if (!simulation.canExecute) throw new Error("Deposit simulation failed");
+  return sdk.executionService.executePreparedTransactionPlan({ prepared, ...wallet });
+}
 ```
 
-**Correct (plan + resolve + execute):**
+Preparation runs plugins and resolves approval requirements once. Prepared simulation/execution reuse that plan, but execution still composes live Permit2 details. Surface executor progress, check terminal receipt status, and refresh account/vault queries after confirmed execution.
 
-```typescript
-const plan = sdk.executionService.planDeposit({
-  account,
-  vault,
-  asset,
-  amount,
-  receiver,
-  enableCollateral: true,
-});
+For an application that commits the user to exact reviewed wallet requests, use the SDK 3.4.0 materialized path:
 
-const resolved = await sdk.executionService.resolveRequiredApprovals({
-  chainId,
-  account: owner,
-  plan,
-});
+1. Prepare and simulate the plan.
+2. Resolve the live EVC address and each Permit2 nonce/deadline/expiration, then call `materializeExecution({ prepared, inputs })`.
+3. Bind the accepted review to both request templates and signature slots/typed-data hashes.
+4. Use `executeMaterialized` to sign and dispatch that accepted materialization. `finalizeMaterializedExecution` supports explicit signature insertion and Safe calls.
+5. Rebuild and obtain a fresh review if any covered intent, account, chain, quote, deadline, or materialization input changes.
 
-// Execute required approvals first, then handle each executable item:
-// - contractCall: send directly
-// - evcBatch: send through EVC.batch
-```
+The SDK does not authenticate an application's review digest. Persist/reconcile ambiguous dispatch outcomes before retrying; an unknown receipt is not a failed transaction.
 
-Execution checklist:
+Use `rewardsService.buildClaimPlan(s)` for reward-provider plans. Some plans include direct `contractCall` items; they cannot all be treated as EVC batches. A simulation that rejects an unsupported direct call must not be replaced by a success result for only part of the plan.
 
-1. Build plan with `planX`.
-2. Resolve approvals with `resolveRequiredApprovals({ chainId, account, plan })`, or use `resolveRequiredApprovalsWithWallet({ chainId, wallet, plan })` when wallet data was already fetched.
-3. Execute `contractCall` items directly when present.
-4. Encode/send EVC batch (`executionService.encodeBatch`) for `evcBatch` items.
-5. Wait for receipt and refetch dependent queries.
-6. Decode contract errors for user-facing diagnostics.
+CoW planners produce asynchronous order plans. Use `executeCowSwapTransactionPlan`, then track order UIDs with `fetchCowSwapOrderStatus` or `pollCowSwapOrderStatus`. CoW plans are unsupported by EVC plan simulation, prepared-plan APIs, `mergePlans`, and `describeBatch`.
 
-Use `mergePlans` to atomically combine multiple intents and `describeBatch` for previews/logging.
+Borrow planners prepend cleanup unless `skipCleanup` is set. Inspect that behavior when reusing an account. Full-repay `cleanupOnMax` can disable collaterals and sweep EVK shares; it does not sweep non-EVK collateral tokens. Keep named operation groups intact when combining or previewing plans.
 
-Reference: `packages/euler-v2-sdk/docs/execution-service.md`, `packages/euler-v2-sdk/src/services/executionService/executionService.ts`, `examples/utils/executor.ts`, `examples/react-sdk-example/src/utils/txExecutor.ts`
+Reference: [Execution and materialized review](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/docs/execution-service.md), [CoW swaps](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/docs/cow-swaps.md)

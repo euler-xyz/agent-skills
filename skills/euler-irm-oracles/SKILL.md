@@ -4,7 +4,7 @@ description: Oracle and Interest Rate Model guide for Euler Finance V2. This ski
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Euler IRM & Oracles Agent Skill

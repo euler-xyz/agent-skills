@@ -15,7 +15,7 @@ Sub-accounts allow a single Ethereum address to manage up to 256 isolated positi
 // ERROR: Account can only have ONE controller at a time
 IEVC(evc).enableController(account, borrowVaultA);
 IEVC(evc).enableController(account, borrowVaultB);
-// Second call fails or overwrites first!
+// EVK rejects multiple enabled controllers during the final account status check.
 ```
 
 **Correct (use sub-accounts for different borrows):**
@@ -44,10 +44,10 @@ IEVC(evc).enableController(subAccount2, borrowVaultC);  // DAI borrow
 /// @param owner The primary account address
 /// @param subAccountId The sub-account index (0-255)
 /// @return The sub-account address
-function getSubAccount(address owner, uint8 subAccountId) 
-    public 
-    pure 
-    returns (address) 
+function getSubAccount(address owner, uint8 subAccountId)
+    public
+    pure
+    returns (address)
 {
     return address(uint160(owner) ^ uint160(subAccountId));
 }
@@ -66,18 +66,18 @@ const subAccount0 = getSubAccount(account, 0);
 const subAccount1 = getSubAccount(account, 1);
 
 const batchItems = [
-  // Withdraw from sub-account 0
+  // Transfer vault shares from sub-account 0
   {
     onBehalfOfAccount: subAccount0,
     targetContract: collateralVault,
     value: 0n,
     data: encodeFunctionData({
       abi: eVaultABI,
-      functionName: 'withdraw',
-      args: [amount, subAccount1, subAccount0], // receiver is subAccount1
+      functionName: 'transfer',
+      args: [subAccount1, sharesToMove],
     }),
   },
-  // Deposit to sub-account 1 happens automatically via receiver
+  // The receiver now owns vault shares; no underlying-token withdrawal occurs.
 ];
 
 // Owner can operate on behalf of any sub-account
@@ -97,6 +97,8 @@ function getAccountOwner(address account) external view returns (address) {
 address owner = IEVC(evc).getAccountOwner(subAccount5);
 require(owner == expectedOwner, "Not owned by expected address");
 ```
+
+Transfer shares between positions; send underlying-token withdrawals to the owner wallet. A synthetic sub-account address cannot sign an ERC-20 transfer. Enable collateral on the destination when needed, and ensure both positions pass the final health checks.
 
 Key points:
 - Sub-accounts share 19 bytes, differ in last byte (0-255)

@@ -1,124 +1,48 @@
 ---
 title: Contract Addresses and ABIs
-impact: MEDIUM
-impactDescription: Essential reference for Euler contract integration
-tags: addresses, abi, interfaces, contracts, chains
+impact: HIGH
+impactDescription: Resolve chain-specific deployments and matching contract interfaces
+tags: addresses, abi, sdk, interfaces, provenance
 ---
 
 ## Contract Addresses and ABIs
 
-The `euler-interfaces` repository provides verified contract addresses and ABIs for all supported chains. Always use this package rather than hardcoding addresses.
+Use the SDK deployment and ABI services for application integrations, or the canonical [euler-interfaces repository](https://github.com/euler-xyz/euler-interfaces) for source artifacts. Check the selected chain and deployment before encoding a transaction.
 
-**Incorrect (hardcoding addresses):**
+**Correct (SDK 3.4.0 deployment and ABI access):**
 
+<!-- checked-example: interface-services -->
 ```typescript
-// WRONG: Addresses may differ between chains and change over time
-const EVC = "0x0C9a3dd6b8F28529d72d7f9cE918D493519EE383";
-const FACTORY = "0x29a56a1b8214D9Cf7c5561811750D5cBDb45CC8e";
-// What about Arbitrum? Base? Other chains?
-// What if addresses are updated?
+import { buildEulerSDK } from "@eulerxyz/euler-v2-sdk";
+
+const sdk = await buildEulerSDK();
+const chainId = 1;
+const deployment = sdk.deploymentService.getDeployment(chainId);
+const evcAddress = deployment.addresses.coreAddrs.evc;
+const vaultLensAddress = deployment.addresses.lensAddrs.vaultLens;
+const evcAbi = await sdk.abiService.fetchABI(chainId, "EthereumVaultConnector");
+
+console.log({ evcAddress, vaultLensAddress, evcAbi });
 ```
 
-**Correct (using euler-interfaces package):**
+The SDK uses live upstream sources by default. Dynamic ABIs have runtime types; use the SDK's typed services for entity reads, or generate typed bindings from a reviewed ABI snapshot. The constructor option `abiServiceConfig.eulerInterfacesBranch` selects a branch, not a commit SHA. For reproducible source artifacts, check out a specific revision:
 
-```typescript
-// Install: npm install @eulerxyz/euler-interfaces
+**Correct (reviewed source checkout):**
 
-// Import chain-specific addresses
-import coreMainnet from '@eulerxyz/euler-interfaces/addresses/1/CoreAddresses.json';
-import peripheryMainnet from '@eulerxyz/euler-interfaces/addresses/1/PeripheryAddresses.json';
-import lensMainnet from '@eulerxyz/euler-interfaces/addresses/1/LensAddresses.json';
-
-// For other chains, use their chain ID
-import coreArbitrum from '@eulerxyz/euler-interfaces/addresses/42161/CoreAddresses.json';
-import coreBase from '@eulerxyz/euler-interfaces/addresses/8453/CoreAddresses.json';
-
-// Access addresses
-console.log('EVC:', coreMainnet.evc);
-console.log('Factory:', coreMainnet.eVaultFactory);
-console.log('VaultLens:', lensMainnet.vaultLens);
+```bash
+git clone https://github.com/euler-xyz/euler-interfaces.git
+git -C euler-interfaces checkout d0e9a428523b3de6cb3e6c7a06ad55b6e59223f3
 ```
 
-**Correct (dynamic chain-based loading):**
+The checkout contains:
 
-```typescript
-// Dynamic address loading for multi-chain apps
-async function getEulerAddresses(chainId: number) {
-  const core = await import(
-    `@eulerxyz/euler-interfaces/addresses/${chainId}/CoreAddresses.json`
-  );
-  const periphery = await import(
-    `@eulerxyz/euler-interfaces/addresses/${chainId}/PeripheryAddresses.json`
-  );
-  const lens = await import(
-    `@eulerxyz/euler-interfaces/addresses/${chainId}/LensAddresses.json`
-  );
-  
-  return { core, periphery, lens };
-}
+- `addresses/<chainId>/CoreAddresses.json`, `LensAddresses.json`, and `PeripheryAddresses.json`
+- `abis/<Contract>.json`
+- `interfaces/I<Contract>.sol`
+- `verify/manifest.json` and per-chain bytecode verification reports
 
-// Usage
-const { core, periphery, lens } = await getEulerAddresses(1); // Mainnet
-const { core: arbCore } = await getEulerAddresses(42161);     // Arbitrum
-```
+When consuming a fixed snapshot, reconcile its deployment addresses and implementation revision with the target chain before use. Review the verification reports for source/audit provenance; factory membership alone does not establish economic safety.
 
-**Address file structure in euler-interfaces:**
+For Solidity EVC integration, import `IEVC` from `ethereum-vault-connector/interfaces/IEthereumVaultConnector.sol` in the EVC source dependency. Foundry remappings should point to the checked-out dependencies' `src/` directories.
 
-```
-@eulerxyz/euler-interfaces/
-├── addresses/
-│   ├── 1/                        # Ethereum Mainnet
-│   │   ├── CoreAddresses.json    # EVC, factory, protocol config
-│   │   ├── PeripheryAddresses.json # IRMs, perspectives, fee flow
-│   │   ├── LensAddresses.json    # Lens contracts
-│   │   ├── OracleAdaptersAddresses.csv # Deployed oracles
-│   │   └── ...
-│   ├── 42161/                    # Arbitrum
-│   ├── 8453/                     # Base
-│   ├── 10/                       # Optimism
-│   └── ...
-└── abis/
-    ├── EVault.json
-    ├── EthereumVaultConnector.json
-    └── ...
-```
-
-**Correct (using with viem):**
-
-```typescript
-import { createPublicClient, http, getContract } from 'viem';
-import { mainnet } from 'viem/chains';
-import core from '@eulerxyz/euler-interfaces/addresses/1/CoreAddresses.json';
-import evcABI from '@eulerxyz/euler-interfaces/abis/EthereumVaultConnector.json';
-import evaultABI from '@eulerxyz/euler-interfaces/abis/EVault.json';
-
-const client = createPublicClient({
-  chain: mainnet,
-  transport: http()
-});
-
-// Create contract instances using imported addresses
-const evc = getContract({
-  address: core.evc as `0x${string}`,
-  abi: evcABI,
-  client
-});
-
-// Check collaterals for an account
-const collaterals = await evc.read.getCollaterals([accountAddress]);
-```
-
-**Correct (Solidity remapping):**
-
-```solidity
-// In remappings.txt for Foundry
-euler-interfaces/=node_modules/@eulerxyz/euler-interfaces/
-
-// In Solidity
-import {IEVault} from "euler-interfaces/interfaces/IEVault.sol";
-import {IEVC} from "euler-interfaces/interfaces/IEVC.sol";
-```
-
-Always refer to the euler-interfaces package for the most up-to-date addresses. The package is maintained by Euler Labs and updated when new contracts are deployed.
-
-Reference: [euler-interfaces](https://github.com/euler-xyz/euler-interfaces)
+Reference: [Canonical interfaces and verification](https://github.com/euler-xyz/euler-interfaces/tree/d0e9a428523b3de6cb3e6c7a06ad55b6e59223f3), [SDK ABI service](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/services/abiService/abiService.ts)

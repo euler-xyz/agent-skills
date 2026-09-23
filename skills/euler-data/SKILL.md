@@ -1,15 +1,15 @@
 ---
 name: euler-data
-description: Developer tools and data access guide for Euler Finance V2. This skill should be used when querying vault data via Lens contracts, fetching historical data from subgraphs, accessing contract interfaces, or deploying vaults via Euler Creator. Triggers on tasks involving VaultLens, OracleLens, subgraph queries, ABIs, or no-code deployment.
+description: Developer tools and data access guide for Euler Finance V2. This skill should be used when querying current data via SDK/Data V3 or Lens contracts, fetching historical data from subgraphs, accessing contract interfaces, or deploying vaults via Euler Creator. Triggers on tasks involving VaultLens, OracleLens, subgraph queries, ABIs, or no-code deployment.
 license: MIT
 metadata:
   author: Euler Labs
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Euler Lens & Data Agent Skill
 
-Developer tools and data access guide for Euler Finance V2. Covers Lens contracts, subgraphs, interfaces, and deployment tools.
+Developer tools and data access guide for Euler Finance V2. Covers SDK/Data V3 routing, Lens contracts, subgraphs, interfaces, and deployment tools. Prefer the `euler-sdk` companion skill for TypeScript application integrations.
 
 ## When to Apply
 

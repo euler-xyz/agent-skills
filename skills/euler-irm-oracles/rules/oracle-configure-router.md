@@ -35,7 +35,7 @@ EulerRouter eulerRouter = EulerRouter(router);
 // Note: Assets are lexicographically sorted internally
 eulerRouter.govSetConfig(
     weth,                    // Base asset
-    usd,                     // Quote asset  
+    usd,                     // Quote asset
     chainlinkEthUsdOracle    // Oracle adapter address
 );
 
@@ -173,7 +173,7 @@ const eulerRouter = getContract({
 // Note: gov functions require being called by governor via EVC context
 await eulerRouter.write.govSetConfig([
   wethAddress,        // base
-  usdAddress,         // quote  
+  usdAddress,         // quote
   chainlinkOracle     // oracle adapter
 ]);
 
@@ -237,7 +237,7 @@ bool isResolved = asset != address(0);
 address fallback = eulerRouter.fallbackOracle();
 
 // Simulate full resolution path
-(uint256 resolvedAmount, address resolvedBase, address resolvedQuote, address resolvedOracle) = 
+(uint256 resolvedAmount, address resolvedBase, address resolvedQuote, address resolvedOracle) =
     eulerRouter.resolveOracle(inAmount, base, quote);
 ```
 
@@ -255,7 +255,7 @@ eulerRouter.transferGovernance(address(0));
 // This allows fixing oracle issues without vault redeployment
 
 // Assets are lexicographically sorted internally in the mapping
-// govSetConfig(A, B, oracle) and govSetConfig(B, A, oracle) 
+// govSetConfig(A, B, oracle) and govSetConfig(B, A, oracle)
 // configure the same pair - order doesn't matter for callers
 ```
 
