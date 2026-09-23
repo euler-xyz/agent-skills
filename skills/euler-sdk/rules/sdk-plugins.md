@@ -42,6 +42,6 @@ Implementation notes:
 
 - `EulerPlugin.processPlan(plan, account, chainId, sdk)` receives the full SDK instance.
 - Pyth write processing uses the generic `calculateHealthCheckSets(plan, account)` utility, which requires a vault-populated `Account` and returns per-batch controller/collateral sets.
-- Keyring uses vaults already present on a passed `Account`; it fetches target vaults only when the account argument is an address.
+- Keyring reuses target vaults already present on a passed `Account` and fetches any missing targets; passing an address fetches all target vaults.
 
 Reference: [packages/euler-v2-sdk/docs/plugins.md](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/docs/plugins.md), [src/plugins/pyth/pythPlugin.ts](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/plugins/pyth/pythPlugin.ts), [src/plugins/keyring/keyringPlugin.ts](https://github.com/euler-xyz/euler-sdks/blob/ff224741c251cae7673c5f835dcf3bbccd9d6605/packages/euler-v2-sdk/src/plugins/keyring/keyringPlugin.ts)
